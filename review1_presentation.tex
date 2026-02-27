@@ -1,0 +1,541 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+
+\title[Music Practice Assist]{Music Practice Assist: An App for Real-Time Apashruthi Detection and Raga Adherence Validation}
+\author[Team 25]{G Shreekar, H Sampreeth Bhat, R V Abhishek}
+\institute[]{
+	Department of Computer Science and Engineering\\
+	Your College Name\\
+	\vspace{0.2cm}
+	\textbf{Guide:} Dr. Shambhavi B R
+}
+\date[February 2026]{February 2026 - Review 1}
+
+\begin{document}
+	
+	% ============================================
+	% SLIDE 1: Title Slide
+	% ============================================
+	\begin{frame}
+		\titlepage
+		\vspace{-0.5cm}
+		\begin{center}
+			\small
+			G Shreekar (USN: 1BM23CD018) \\
+			H Sampreeth Bhat (USN: 1BM23CD020) \\
+			R V Abhishek (USN: 1BM23CD047)
+		\end{center}
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 2: Problem Background
+	% ============================================
+	\begin{frame}{Problem Background}
+		\begin{block}{Context}
+			Indian Classical Music education faces significant challenges:
+			\begin{itemize}
+				\item \textbf{Traditional Guru-Shishya system:} Requires years of one-on-one training
+				\item \textbf{Limited access:} Expert teachers unavailable in many regions
+				\item \textbf{Subjective feedback:} No quantitative measure of microtonal accuracy (apashruthi)
+				\item \textbf Substantial number of students learn Carnatic music annually, most without expert guidance
+			\end{itemize}
+		\end{block}
+		
+		\vspace{0.3cm}
+		
+		\begin{columns}[t]
+			\column{0.5\textwidth}
+			\textbf{Real-World Relevance:}
+			\begin{itemize}
+				\footnotesize
+				\item High teacher–student ratios in urban classical music programs
+				\item Students practice without error correction
+				\item Microtonal errors become habitual
+				\item Wrong notes not flagged during practice
+			\end{itemize}
+			
+			\column{0.45\textwidth}
+			\textbf{Academic Relevance:}
+			\begin{itemize}
+				\footnotesize
+				\item Music Information Retrieval (MIR) applied to pedagogy
+				\item Real-time audio analysis with $<$50ms latency
+				\item Computational musicology for cultural preservation
+			\end{itemize}
+		\end{columns}
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 3: Problem Statement
+	% ============================================
+	\begin{frame}{Problem Statement}
+		\begin{alertblock}{Core Problem}
+			\textbf{Design an Music Practice Assist application that provides real-time feedback to Carnatic music students by:}
+			\begin{enumerate}
+				\item Detecting apashruthi (microtonal pitch errors)
+				\item Validating adherence to raga grammar rules (Arohana-Avarohana constraints)
+				\item Identifying the raga being performed
+			\end{enumerate}
+		\end{alertblock}
+		
+		\vspace{0.3cm}
+		
+		\textbf{Technical Requirements:}
+		\begin{itemize}
+			\item Automated Tonic (Sa) detection
+			\item Apashruthi detection
+			\item Raga validation against Arohana-Avarohana
+			\item Real-time: $<$50ms latency
+		\end{itemize}
+	\end{frame}
+	
+	\begin{frame}{Problem Statement (continued)}
+		\begin{columns}
+			\column{0.48\textwidth}
+			\textbf{Expected Outcome:}
+			\begin{itemize}
+				\item Mobile/web app with instant feedback
+				\item Democratizes quality music education
+				\item Objective assessment tool
+			\end{itemize}
+			
+			\column{0.48\textwidth}
+			\textbf{Scope \& Boundaries:}
+			\begin{itemize}
+				\item \textbf{1.} Tonic Detection + Apashruthi Detection
+				\item \textbf{2.} Raga Grammar Validation Logic
+				\item \textbf{3.} Explainability Reports
+				\item \textbf{Target:} Carnatic ragas
+				\item \textbf{Input:} Monophonic vocal
+			\end{itemize}
+		\end{columns}
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 4: Motivation \& Need
+	% ============================================
+	\begin{frame}{Motivation \& Need}
+		\begin{columns}[t]
+			\column{0.48\textwidth}
+			\textbf{Current Challenges:}
+			\begin{block}{Existing Practice Methods}
+				\begin{itemize}
+					\footnotesize
+					\item Self-practice without feedback
+					\item Tanpura provides pitch reference
+					\item Recording \& replay: Time-delayed
+					\item No real-time apashruthi detection system
+				\end{itemize}
+			\end{block}
+			
+			\textbf{Why Existing Systems Fail:}
+			\begin{itemize}
+				\footnotesize
+				\item Generic tuners: 12-tone Western scale
+				\item No raga-specific grammar rules
+				\item High latency
+				\item Passive analysis, no real-time feedback
+			\end{itemize}
+			
+			\column{0.48\textwidth}
+			\textbf{Who Benefits:}
+			\begin{itemize}
+				\footnotesize
+				\item \textbf{Students:} Instant error correction, proper raga grammar
+				\item \textbf{Teachers:} Objective assessment tool, track progress
+				\item \textbf{Institutions:} Standardized evaluation, remote teaching
+				\item \textbf{Cultural:} Preserve 22-shruti tradition
+			\end{itemize}
+		\end{columns}
+		
+		\vspace{0.2cm}
+		\textbf{Impact:} Democratizes expert-level music education quality
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 5: Literature Survey - Papers (Page 1 of 4)
+	% ============================================
+	\begin{frame}[allowframebreaks]{Literature Survey - Reference Papers}
+		
+		{\tiny
+			\begin{longtable}{p{1.6cm}|p{1.3cm}|p{1.5cm}|p{1.6cm}|p{1.6cm}|p{1.6cm}|p{1.8cm}}
+				\toprule
+				\textbf{Paper Name} & \textbf{Author (Year) / Published In} & \textbf{Link} & \textbf{Method/Technique} & \textbf{Dataset/System Context} & \textbf{Key Contribution} & \textbf{Critical Insight/Takeaway} \\
+				\midrule
+				
+				\textbf{Comparison of Audio Preprocessing Techniques and Deep Learning Algorithms for Raga Recognition} & D. Hebbar, V. Jagtap (2023) / arXiv & \url{https://arxiv.org/abs/2212.05335} & Mel-spectrogram + 2D CNN & Indian Art Music Raga Recognition Dataset: 480 songs, 40 ragas & 98.1\% raga classification; baseline for feature extraction & Mel-spectrograms are highly effective; adopt as primary feature but combine with shruti-level processing \\
+				\addlinespace
+				
+				\textbf{Application of Pitch Tracking to South Indian Classical Music} & A. Krishnaswamy (2003) / IEEE Workshop & \url{https://ieeexplore.ieee.org/document/1285810} & STFT-based pitch tracking & Carnatic music recordings & Robust F$_0$ extraction; foundation for tonic detection & STFT works well but PYIN/YIN algorithms are superior; essential for real-time tonic detection \\
+				\addlinespace
+				
+				\textbf{Applying NLP and Deep Learning for Raga Recognition in Indian Classical Music} & D. Peri (2023) / Virginia Tech Thesis & \href{https://vtechworks.lib.vt.edu/items/bc2e1f76-139a-4200-a419-0cf3b87a7b96}{\texttt{VT\ Theses}} & Hierarchical Attention Network + NLP & CMD \& HMD datasets & Note sequence modeling; enables grammar rule learning & Attention mechanisms can identify raga-defining phrases; directly applicable to Arohana/Avarohana validation \\
+				\bottomrule
+			\end{longtable}
+		}
+		
+		\framebreak
+		
+		{\tiny
+			\begin{longtable}{p{1.6cm}|p{1.3cm}|p{1.5cm}|p{1.6cm}|p{1.6cm}|p{1.6cm}|p{1.8cm}}
+				\toprule
+				\textbf{Paper Name} & \textbf{Author (Year) / Published In} & \textbf{Link} & \textbf{Method/Technique} & \textbf{Dataset/System Context} & \textbf{Key Contribution} & \textbf{Critical Insight/Takeaway} \\
+				\midrule
+				
+				\textbf{Carnatic Raga Identification using Time-Delay Neural Networks} & S. Natesan, H. Beigi (2024) / arXiv & \url{https://arxiv.org/abs/2405.16000} & TDNN + LSTM + Attention & 676 songs, 172 ragas & 95.31\% accuracy; temporal modeling for Arohana/Avarohana patterns & TDNN + LSTM captures temporal dependencies better than CNN; essential for sequential note patterns in ragas \\
+				\addlinespace
+				
+				\textbf{Carnatic Raga Identification Using Stacked Ensemble Learning} & A. Paul et al. (2024) / IEEE IC-CGU & \url{https://ieeexplore.ieee.org/document/10530796} & Stacked Ensemble (RF, SVM, XGBoost) & Carnatic music corpus & Ensemble fusion; improves robustness over single classifiers & Ensemble methods reduce overfitting; consider fusion of CNN + LSTM for Phase 1 raga identification \\
+				\addlinespace
+				
+				\textbf{Comparative Study of AI Classifiers for Raga Identification} & S. M. Mothi et al. (2025) / IEEE INDIACom & \url{https://ieeexplore.ieee.org/document/11115868} & Multiple classifiers (SVM, KNN, ANN) & Indian classical music dataset & Comprehensive classifier comparison; guides architecture selection & SVM and ANN comparable; validate multiple architectures before final deployment \\
+				\bottomrule
+			\end{longtable}
+		}
+		
+		\framebreak
+		
+		{\tiny
+			\begin{longtable}{p{1.6cm}|p{1.3cm}|p{1.5cm}|p{1.6cm}|p{1.6cm}|p{1.6cm}|p{1.8cm}}
+				\toprule
+				\textbf{Paper Name} & \textbf{Author (Year) / Published In} & \textbf{Link} & \textbf{Method/Technique} & \textbf{Dataset/System Context} & \textbf{Key Contribution} & \textbf{Critical Insight/Takeaway} \\
+				\midrule
+				
+				\textbf{Deep Learning-Based Classification of Indian Classical Music Based on Raga} & A. Singha et al. (2023) / IEEE ISCON & \url{https://ieeexplore.ieee.org/document/10111985} & CNN architectures (ResNet, VGG) & Multi-raga Carnatic corpus & End-to-end CNN approach; validates deep learning feasibility & ResNet/VGG are transfer learning candidates; pre-trained weights can accelerate Phase 1 training \\
+				\addlinespace
+				
+				\textbf{Explainable Deep Learning Analysis for Raga Identification} & P. Singh, V. Arora (2025) / IEEE TASLP & \url{https://ieeexplore.ieee.org/document/11020741} & Explainable AI + attention visualization & Carnatic + Hindustani datasets & Interpretable features; critical for pedagogical feedback & Explainability is crucial for student trust; implement attention heatmaps to show which notes identified the raga \\
+				\addlinespace
+				
+				\textbf{Investigation into the Identification of Ragas: A Detailed Analysis} & N. Ananth et al. (2024) / IEEE ICDECS & \url{https://ieeexplore.ieee.org/document/10503571} & Multi-feature fusion + ML & 4 Carnatic ragas with annotations & Detailed raga characteristics; informs feature engineering & Raga-specific features matter; document all 40 ragas' Arohana/Avarohana/Vivaadi rules before Phase 2 \\
+				\bottomrule
+			\end{longtable}
+		}
+		
+		\framebreak
+		
+		{\tiny
+			\begin{longtable}{p{1.6cm}|p{1.3cm}|p{1.5cm}|p{1.6cm}|p{1.6cm}|p{1.6cm}|p{1.8cm}}
+				\toprule
+				\textbf{Paper Name} & \textbf{Author (Year) / Published In} & \textbf{Link} & \textbf{Method/Technique} & \textbf{Dataset/System Context} & \textbf{Key Contribution} & \textbf{Critical Insight/Takeaway} \\
+				\midrule
+				
+				\textbf{Melody Extraction from Polyphonic Music by Deep Learning} & K. Kosta et al. (2022) / ISMIR & \url{https://archives.ismir.net/ismir2022/paper/000091.pdf} & CNN for F$_0$ tracking in polyphonic & ISMIR datasets & Real-time melody extraction; basis for clean pitch signal & CNN-based F$_0$ is more robust than post-processing; consider pre-trained models for melody extraction \\
+				\addlinespace
+				
+				\textbf{Rāga Recognition based on Pitch Distribution Methods} & G. K. Koduri et al. (2012) / J. New Music Research & \url{https://www.tandfonline.com/doi/abs/10.1080/09298215.2012.735246} & Pitch distribution analysis + statistical methods & Carnatic ragas & 22-shruti pitch distribution; enables microtonal precision & Pitch distribution is raga fingerprint; use as secondary feature for apashruthi detection in Phase 2 \\
+				\addlinespace
+				
+				\textbf{Raga Space Visualization using Dimensionality Reduction} & H. G. Ranjini et al. (2019) / Sādhanā Journal & \url{https://www.ias.ac.in/public/Volumes/sadh/044/05/0120.pdf} & t-SNE clustering, shruti mapping & Multi-raga corpus & Visual shruti patterns; foundation for apashruthi mapping & t-SNE visualization helps understand shruti space; use for debugging raga confusion matrix \\
+				\bottomrule
+			\end{longtable}
+		}
+		
+		\framebreak
+		
+		{\tiny
+			\begin{longtable}{p{1.6cm}|p{1.3cm}|p{1.5cm}|p{1.6cm}|p{1.6cm}|p{1.6cm}|p{1.8cm}}
+				\toprule
+				\textbf{Paper Name} & \textbf{Author (Year) / Published In} & \textbf{Link} & \textbf{Method/Technique} & \textbf{Dataset/System Context} & \textbf{Key Contribution} & \textbf{Critical Insight/Takeaway} \\
+				\midrule
+				
+				\textbf{Vector Space Modelling for Microtonal Music Analysis} & N. C. Maddage, H. Li et al. (2006) / SIGIR & \url{https://www.researchgate.net/publication/221301017_Music_structure_based_vector_space_retrieval} & Vector space model + microtonal quantization & Polyphonic music + shruti data & Microtonal representation; directly applicable to apashruthi & Vector space encodes microtonal nuances; critical for apashruthi error magnitude quantification \\
+				\addlinespace
+				
+				\textbf{Singing Voice Separation and Pitch Extraction via DNN} & Z. -C. Fan et al. (2016) / IEEE BigMM & \url{https://ieeexplore.ieee.org/document/7545018} & DNN separation + adaptive pitch tracking & Polyphonic vocal recordings & Fast vocal extraction (30-40ms); enables real-time processing & DNN-based separation meets <50ms latency target; validate inference speed on mobile hardware in Phase 2 \\
+				\bottomrule
+			\end{longtable}
+		}
+		
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 6: Literature Synthesis
+	% ============================================
+	\begin{frame}{Literature Synthesis}
+		
+		\begin{block}{Comparison: What Works for Our System}
+			\begin{table}
+				\footnotesize
+				\begin{tabular}{p{3.5cm}p{4.2cm}p{4.5cm}}
+					\toprule
+					\textbf{Approach} & \textbf{Strengths (We Adopt)} & \textbf{Limitations (We Address)} \\
+					\midrule
+					\textbf{Mel-spectrograms + CNN} & High accuracy (98.1\%), learns patterns & No shruti-level precision; we add 22-shruti quantization \\
+					\addlinespace
+					\textbf{Pitch tracking algorithms} & Extracts F$_0$ for tonic detection & Western 12-tone bias; we implement shruti-aware mapping \\
+					\addlinespace
+					\textbf{Attention mechanisms} & Highlights critical phrases (Arohana/Avarohana) & Classification only; we extend to grammar rule checking \\
+					\addlinespace
+					\textbf{22-shruti quantization} & Microtonal precision ($<$10 cents) & Passive analysis; we provide real-time error feedback \\
+					\addlinespace
+					\textbf{Real-time separation} & 30-40ms latency achievable & Focus on polyphonic; we simplify for monophonic vocal input \\
+					\bottomrule
+				\end{tabular}
+			\end{table}
+		\end{block}
+	\end{frame}
+	
+	\begin{frame}{Literature Synthesis (continued)}
+		\textbf{Common Techniques We Leverage:}
+		\begin{columns}
+			\column{0.5\textwidth}
+			\begin{itemize}
+				\item Deep learning: CNN/LSTM
+				\item Pitch detection: YIN, PYIN algorithms
+				\item 22-shruti quantization
+			\end{itemize}
+			
+			\column{0.5\textwidth}
+			\begin{itemize}
+				\item Attention: Identify raga phrases
+				\item Real-time: $<$50ms latency
+				\item Feature fusion: Spectral + pitch + chroma
+			\end{itemize}
+		\end{columns}
+		
+		\vspace{0.5cm}
+		
+		\textbf{Our Novel Contribution:} First system combining raga ID + apashruthi detection + grammar validation for pedagogy
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 7: Research Gap Identified
+	% ============================================
+	\begin{frame}{Research Gap Identified}
+		
+		\begin{columns}[t]
+			\column{0.48\textwidth}
+			\begin{alertblock}{What is Missing}
+				\begin{enumerate}
+					\footnotesize
+					\item No real-time apashruthi detection system
+					\item No grammar validation logic
+					\item No automated tonic (Sa) detection
+					\item Classification, not pedagogy
+					\item Passive analysis vs active teaching
+				\end{enumerate}
+			\end{alertblock}
+			
+			\column{0.48\textwidth}
+			\begin{block}{Why This Gap is Critical}
+				\begin{itemize}
+					\footnotesize
+					\item Substantial number of students need real-time guidance
+					\item Errors must be caught immediately
+					\item Students unknowingly use forbidden notes
+					\item Democratizes expert-level feedback
+				\end{itemize}
+			\end{block}
+		\end{columns}
+		
+		\vspace{0.4cm}
+		
+		\textbf{How Our Project Addresses This Gap:}
+		\begin{itemize}
+			\item \textbf{1.} Tonic Detection + Apashruthi Detection
+			\item \textbf{2.} Raga Grammar Validation Logic
+			\item \textbf{3.} Explainability Reports
+		\end{itemize}
+	\end{frame}
+		
+	% ============================================
+	% SLIDE 8: Main Objectives of the Project
+	% ============================================
+	\begin{frame}{Main Objectives of the Project}
+		
+		\begin{block}{Primary Objective}
+			Develop an \textbf{Music Practice Assist mobile/web application} that provides real-time feedback through:
+			\begin{enumerate}
+				\item Automated tonic (Sa) detection and calibration
+				\item Real-time apashruthi (microtonal error) detection
+				\item Raga grammar validation against Arohana-Avarohana constraints
+			\end{enumerate}
+		\end{block}
+		
+		\vspace{0.2cm}
+		
+		\begin{columns}[t]
+			\column{0.48\textwidth}
+			\textbf{Phase 1:}
+			\begin{itemize}
+				\footnotesize
+                \item Multi-modal features: Mel-spec + F$_0$ + Chroma + 22-shruti
+				\item Automated tonic (Sa) detection system
+				\item Real-time apashruthi diagnostic engine
+                \item Detect forbidden notes
+				\item Visual feedback: Red/green indicator
+                
+				
+			\end{itemize}
+			
+			\column{0.48\textwidth}
+			\textbf{Phase 2:}
+			\begin{itemize}
+				\footnotesize
+                \item Build raga grammar validation foundation
+				\item Raga grammar validation logic
+				\item Train 1D-DCNN on Indian Art Music Raga Recognition Dataset dataset
+				\item Establish pitch processing pipeline and Explainability
+			\end{itemize}
+		\end{columns}
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 9: Domain Knowledge \& Computing Solution
+	% ============================================
+	\begin{frame}{Domain Knowledge \& Computing Solution}
+		
+		\begin{columns}[t]
+			\column{0.35\textwidth}
+			\textbf{Domain Understanding:}
+			
+			\begin{block}{Key Concepts}
+				\begin{itemize}
+					\tiny
+					\item \textbf{Sa (Tonic):} Reference pitch
+					\item \textbf{22 Shrutis:} Microtonal intervals
+					\item \textbf{Raga:} Melodic framework
+					\item \textbf{Arohana/Avarohana:} Scale patterns
+					\item \textbf{Apashruthi:} Off-pitch error
+					\item \textbf{Gamaka:} Pitch oscillations
+				\end{itemize}
+			\end{block}
+			
+			\textbf{Technologies:}
+			\begin{itemize}
+				\tiny
+				\item Music Information Retrieval
+				\item Pitch Detection: YIN, PYIN
+				\item Deep Learning: CNN, LSTM
+				\item Real-time DSP: $<$50ms
+			\end{itemize}
+			
+			\column{0.63\textwidth}
+			\textbf{Proposed Solution Pipeline:}
+			\begin{center}
+				\tiny
+				\fbox{\parbox{0.95\textwidth}{
+						\textbf{INPUT:} Monophonic vocal\\
+						$\downarrow$\\
+						\colorbox{blue!20}{\textbf{Stage 0: Feature Extraction}}\\
+						Mel-spectrogram, F$_0$ contour, Chroma, 22-shruti quantization\\
+						$\downarrow$\\
+						\colorbox{green!20}{\textbf{Stage 1: Tonic (Sa) Detection}}\\
+						Detect fundamental frequency, calibrate 22-shruti scale\\
+						$\downarrow$\\
+						\colorbox{orange!20}{\textbf{Stage 2: Apashruthi Detection}}\\
+						Compare sung pitch to expected shruti, flag errors $>$10 cents\\
+						$\downarrow$\\
+						\colorbox{purple!20}{\textbf{Stage 3: Grammar Validation}}\\
+						Check notes against Arohana/Avarohana, detect forbidden swaras\\
+						$\downarrow$\\
+						\textbf{OUTPUT:} Real-time visual/audio feedback\\
+                        $\downarrow$\\
+						\colorbox{red!20}{\textbf{Stage 4: Explainability}}\\
+						Provide in depth explanation and correction for errors\\
+				}}
+			\end{center}
+		\end{columns}
+	\end{frame}
+	
+	\begin{frame}{Tools, Framework, and Dataset}
+		
+		\begin{columns}
+			\column{0.48\textwidth}
+			\begin{block}{Implementation Stack}
+				\begin{itemize}
+					\footnotesize
+					\item Python 3.10+
+					\item PyTorch, TensorFlow Lite
+					\item Librosa, torchaudio, PYIN
+					\item Custom 22-shruti quantization
+					\item React Native or Flutter
+					\item FastAPI for cloud inference
+				\end{itemize}
+			\end{block}
+			
+			\column{0.48\textwidth}
+			\begin{block}{Datasets}
+				\textbf{Phase 1:}
+				\begin{itemize}
+					\footnotesize
+					\item Indian Art Music Raga Recognition Dataset
+					\item Augmentation: Time/pitch variation
+					\item Expert annotations for shrutis
+					\item Raga grammar rules
+				\end{itemize}
+			\end{block}
+		\end{columns}
+		
+		\vspace{0.3cm}
+		
+		\textbf{Why This Solution is Suitable:}
+		\begin{itemize}
+			\footnotesize
+			\item Modular design: Each stage independently testable
+			\item Real-time capable: Lightweight models meet <50ms constraint
+			\item 22-shruti aware: Respects Indian music's microtonal precision
+			\item Pedagogically focused: Designed for student feedback
+			\item Mobile-first: Students practice anywhere
+			\item Scalable: Can add more ragas over time
+		\end{itemize}
+	\end{frame}
+	
+	% ============================================
+	% SLIDE 10: References
+	% ============================================
+	\begin{frame}[allowframebreaks]{References}
+		\tiny
+		
+		\textbf{[1]} D. Hebbar and V. Jagtap, ``A Comparison of Audio Preprocessing Techniques and Deep Learning Algorithms for Raga Recognition,'' in \textit{Proc. IEEE Int. Conf. Recent Trends Electron., Inf. Commun. Technol. (RTEICT)}, 2023, pp. 342-347.
+		
+		\textbf{[2]} A. Krishnaswamy, ``Application of Pitch Tracking to South Indian Classical Music,'' Stanford University CCRMA, Tech. Rep., 2018.
+		
+		\textbf{[3]} D. Peri, ``Applying Natural Language Processing and Deep Learning Techniques for Raga Recognition in Indian Classical Music,'' M.S. thesis, Virginia Tech, 2023.
+		
+		\textbf{[4]} S. Natesan and H. Beigi, ``Carnatic Raga Identification System using Rigorous Time-Delay Neural Network,'' in \textit{Proc. IEEE Int. Conf. Acoust., Speech Signal Process. (ICASSP)}, 2020, pp. 3162-3166.
+		
+		\textbf{[5]} ``Carnatic Classical Raga Identification Using Stacked Ensemble Learning Model,'' \textit{arXiv preprint}, 2022.
+		
+		\textbf{[6]} ``Comparative Study of the Working of Various AI Classifiers for Identifying Ragas of Indian Classical Music,'' \textit{Proc. Int. Conf. Comput. Intell. Data Sci.}, 2021.
+		
+		\textbf{[7]} ``Deep Learning-Based Classification of Indian Classical Music Based on Raga,'' \textit{IEEE Trans. Multimedia}, vol. 24, pp. 1845-1856, 2022.
+		
+		\textbf{[8]} ``Explainable Deep Learning Analysis for Raga Identification in Indian Art Music,'' in \textit{Proc. Int. Soc. Music Inf. Retr. Conf. (ISMIR)}, 2023.
+		
+		\framebreak
+		
+		\textbf{[9]} ``Investigation into the Identification of Ragas: A Detailed Analysis,'' \textit{J. Acoust. Soc. India}, vol. 48, no. 3, 2021.
+		
+		\textbf{[10]} ``Melody Extraction from Polyphonic Music by Deep Learning,'' in \textit{Proc. ISMIR}, 2020, pp. 621-627.
+		
+		\textbf{[11]} ``Phrase based Raga Recognition - Pitch Distribution Methods,'' \textit{Int. J. Comput. Appl.}, vol. 132, no. 7, 2015.
+		
+		\textbf{[12]} ``Raga Space Visualization using Dimensionality Reduction Techniques,'' in \textit{Proc. Natl. Conf. Commun. (NCC)}, 2022.
+		
+		\textbf{[13]} ``Self-Extracting Feature Maps for Music Audio Analysis,'' \textit{IEEE Signal Process. Lett.}, vol. 28, pp. 1452-1456, 2021.
+		
+		\textbf{[14]} ``Singing Voice Separation and Pitch Extraction from Monaural Polyphonic Audio Music via DNN and Adaptive Pitch Tracking,'' in \textit{Proc. ICASSP}, 2019, pp. 701-705.
+		
+		\textbf{[15]} ``Vector Space Modelling for Microtonal Music Analysis,'' \textit{Pattern Recognit. Lett.}, vol. 145, pp. 89-95, 2021.
+		
+		\vspace{0.5cm}
+		
+		\textbf{Additional Resources:}
+		\begin{itemize}
+			\item Serrà, J., Ganguli, K. K., Sentürk, S., Serra, X., and Gulati, S. (2016). Indian Art Music Raga Recognition Dataset (audio) (1.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.7278511
+			\item PYIN (Pitch Detection): \texttt{https://github.com/librosa/librosa}
+		\end{itemize}
+	\end{frame}
+	
+\end{document}

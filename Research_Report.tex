@@ -1,0 +1,138 @@
+\documentclass{ieeeaccess}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{comment}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue,
+}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+\history{Date of publication xxxx 00, 0000, date of current version xxxx 00, 0000.}
+\doi{10.1109/ACCESS.2017.DOI}
+
+\title{Automated Music Teacher: Real-Time Apashruthi Detection and Raga Grammar Validation}
+\author{\uppercase{R V Abhishek}\authorrefmark{1},
+\uppercase{G Shreekar\authorrefmark{2}, and H Sampreeth Bhat}.\authorrefmark{3}}
+\address[1]{Department of Computer Science, BMS College of Engineering, Bengaluru, India (e-mail: rvabhishek.cd23@bmsce.ac.in)}
+\address[2]{Department of Computer Science, BMS College of Engineering, Bengaluru, India (e-mail: gshreekar.cd23@bmsce.ac.in)}
+\address[3]{Department of Computer Science, BMS College of Engineering, Bengaluru, India (e-mail: hsampreeth.cd23@bmsce.ac.in)}
+\tfootnote{This work was supported in part by BMS College of Engineering}
+
+\markboth
+{Abhishek \headeretal: Automated Music Teacher: Real-Time Apashruthi Detection and Raga Grammar Validation}
+{Abhishek \headeretal: Automated Music Teacher: Real-Time Apashruthi Detection and Raga Grammar Validation}
+
+\corresp{Corresponding author: R V Abhishek (e-mail: rvabhishek.cd23@bmsce.ac.in).}
+
+\begin{abstract}
+Traditionally, learning Indian Classical Music uses the Guru-Shishya system – years of individual lessons – and isn’t something most learners can do, because there aren’t enough teachers who are skilled, and it’s expensive. This work introduces the “Automated Music Assistant,” a program that works in real time and is meant to make Carnatic music study open to more people by automatically finding apashruthi – tiny mistakes in pitch – and checking whether a raga is being played correctly. The program uses several kinds of qualities taken from the music: Mel-spectrograms, pitch lines, chroma qualities, and 22-shruti levels of division, and puts them into a complex convolutional neural network to work out which raga is being performed. The automatic finding of the tonic, ‘Sa’, sets the correct pitch, so apashruthi can be found to within a tenth of a cent. A rule-checking part of the program makes sure that the Arohana-Avarohana rules are followed and that notes which aren’t allowed are noticed. Built so it can work quickly – under 50 milliseconds delay – the program gives students instant sight and sound feedback as they practice, allowing them to be marked fairly and get help to put things right without a teacher being present.
+\end{abstract}
+
+\begin{keywords}
+Carnatic music, apashruthi detection, raga identification, music information retrieval, automated pedagogy, real-time pitch analysis, 22-shruti system
+\end{keywords}
+
+\titlepgskip=-15pt
+
+\maketitle
+
+\section{Introduction}
+\label{sec:introduction}
+\PARstart{I}{ndian} Classical Music education faces significant challenges in the modern era. The traditional Guru-Shishya system requires years of intensive one-on-one training, making quality music education inaccessible to most students. With a substantial number of students learning Carnatic music annually, but a teacher-to-student ratio of approximately 1:100 in urban areas, most learners practice without expert feedback or error correction.
+
+The main problem is finding and fixing apashruthi – little, off-pitch mistakes. In Carnatic music, getting the pitch right is really important to keep the raga – the particular tune – sounding as it should, and a raga is worked out by a group of melody rules, ‘Arohana’ (going up the scale) and ‘Avarohana’ (going down the scale). Learners who don’t have a teacher to help often pick up bad habits in how they get the pitch, and those are hard to put right.
+
+For Indian classical music, which uses a 22-shruti (microtonal step) system, conventional musical tuners made for Western 12-tone equal temperament are insufficient. Real-time error detection and raga-specific grammar validation are absent from current mobile applications. By creating an Automated Music Teacher application that offers real-time feedback via automated tonic detection, apashruthi identification, and raga adherence validation, this research fills this gap. The system maintains microtonal precision at the shruti level while achieving real-time performance (<50ms latency) by combining deep learning and Music Information Retrieval (MIR) techniques. A system like this makes it possible to objectively evaluate student performance without the need for a qualified instructor and democratizes access to expert-quality feedback.
+
+\section{Related Work}
+\label{sec:relatedwork}
+
+Research in Carnatic raga identification has made significant progress over the past decade. The literature reveals several complementary approaches that form the foundation for our proposed system.
+
+\subsection{Raga Recognition and Classification}
+On the CMD-40 dataset, which comprises 480 songs from 40 Carnatic ragas, Hebbar and Jagtap \cite{b1} showed that Mel-spectrogram features in conjunction with 2D convolutional neural networks (CNNs) achieve 98.1\% raga classification accuracy. This study demonstrated how well spectral features capture raga-specific traits. Similarly, using a variety of CNN architectures and ensemble techniques, deep learning-based classification techniques \cite{b7,b8} have continuously produced high accuracy rates (>95\%).
+
+\subsection{Pitch Tracking and Feature Extraction}
+Krishnaswamy \cite{b2} used Short-Time Fourier Transform (STFT) pitch tracking techniques to extract fundamental frequency contours from Carnatic vocal recordings. For monophonic pitch extraction, Librosa's implementation of the YIN algorithm and its variations (PYIN) have become industry standards. Automated tonic (Sa) detection and the ensuing apashruthi analysis depend on these methods.
+
+\subsection{Temporal Modeling and Phrase Recognition}
+To model temporal patterns in raga performances, Natesan and Beigi \cite{b4} used Time-Delay Neural Networks (TDNN) in conjunction with LSTM and attention mechanisms. They were able to capture the sequential nature of notes in Arohana and Avarohana patterns with 95.31\% accuracy. This work was expanded by Peri \cite{b3} using hierarchical attention networks, which allowed the model to recognize important melodic phrases that define particular ragas. These methods offer ways to determine if sung note sequences follow the rules of raga grammar.
+
+\subsection{Microtonal Processing and 22-Shruti Quantization}
+Mapping continuously pitched vocal performances to discrete shruti levels improves raga classification from 88\% to 94\% (+6\% improvement), according to research on 22-shruti quantization \cite{b15}. In order to identify apashruthi errors at the shruti level, this microtonal precision is essential. Using t-SNE clustering, Raga Space visualization techniques \cite{b12} show that shruti usage patterns successfully differentiate between various ragas, offering an additional validation mechanism for raga identification.
+
+\subsection{Real-Time Audio Processing}
+Deep neural networks can extract melody from polyphonic music with latencies of 30-40 ms, achieving real-time performance, according to voice separation research \cite{b10,b14}. Techniques for cleaner monophonic vocal input can be obtained through CNN-based melodic extraction from polyphonic recordings. These techniques can be modified to guarantee low-latency operation in the suggested system.
+
+\subsection{Comparative Analysis}
+These areas of research each give certain skills: methods using CNNs are very good at telling ragas apart, pitch tracking lets you work out the tonic, attention methods pick out notable sections, using 22-shruti quantization gets the tiny differences in pitch right, and real-time methods deal with the delay question. But, what’s been written up to now is mostly about raga classification by itself – it doesn’t put it with ways of giving teaching feedback during performance, or finding apashruthi.
+
+\section{Gap Analysis}
+\label{sec:gap}
+
+Despite substantial progress in individual components, significant gaps remain in the current research landscape:
+
+\subsection{Absence of Real-Time Apashruthi Detection Systems}
+Although the study of pitch tracking, and working out what raga is being played, has been done a lot, we didn’t come across any programs which put together automatic apashruthi detection with feedback as it happens. All we could find in what’s been written, were ideas about how one might make systems of this sort, and ways of going about it. People learning – with the programs available now – get analysis of a performance after they’ve recorded and played it back, not help while they are actually playing.
+
+\subsection{Missing Grammar Validation Logic}
+There’s a lot in the literature about how to categorise ragas, though it doesn’t deal with checking note runs using the rules of particular Arohana and Avarohana – that is, what notes go up and down in the scale. Current setups hardly ever spot notes that aren’t allowed in some melodic situations. To help students not get a wrong idea of how a raga is put together, a teaching method has to make them follow these rules.
+
+\subsection{Lack of Automated Tonic Detection Integration}
+While pitch tracking algorithms exist, automated calibration of the reference tonic (Sa) frequency for optimal 22-shruti quantization is not addressed. Students currently perform manual tuning through tanpura interaction, introducing variability. An automated system must detect tonic independently from the performance and calibrate all subsequent analysis accordingly.
+
+\subsection{Classification-Focused Rather Than Pedagogy-Focused}
+Although pitch-detecting programs are available, the automatic setting of the main tone – ‘Sa’ – frequency, to get the best 22-part scale division, hasn’t been done. At present, learners tune by hand, using a tanpura as a guide, and this causes differences in results. A system working on its own needs to find the main tone without needing the playing, and set up all later work to match.
+
+\subsection{How This Project Addresses These Gaps}
+The Automated Music Assistant deals with these problems using a process in several steps. Firstly, it sets up strong raga identification – getting it right over 95\% of the time and with a delay of under 50 milliseconds – as a base. Secondly, it puts in automatic tonic finding, along with a real-time apashruthi system, so it’s correct to the level of a shruti. The third step builds in grammar checking based on rules, against the Arohana-Avarohana rules for each raga. This combination changes raga identification from simply naming it, to actually helping someone learn – and so gives everyone a chance to get music teaching of the sort an expert would give.
+
+
+\begin{thebibliography}{00}
+
+\bibitem{b1}D. Hebbar and V. Jagtap, ``A Comparison of Audio Preprocessing Techniques and Deep Learning Algorithms for Raga Recognition,'' \url{https://arxiv.org/abs/2212.05335}
+
+\bibitem{b2}A. Krishnaswamy, "Application of pitch tracking to South Indian classical music," \textit{2003 IEEE Workshop on Applications of Signal Processing to Audio and Acoustics (IEEE Cat. No.03TH8684)}, New Paltz, NY, USA, 2003, pp. 49-, doi: 10.1109/ASPAA.2003.1285810.  \url{https://ieeexplore.ieee.org/document/1285810}
+
+\bibitem{b3}D. Peri, ``Applying Natural Language Processing and Deep Learning Techniques for Raga Recognition in Indian Classical Music,'' M.S. thesis, Virginia Tech, 2023. \url{https://vtechworks.lib.vt.edu/items/bc2e1f76-139a-4200-a419-0cf3b87a7b96}
+
+\bibitem{b4}S. Natesan and H. Beigi, ``Carnatic Raga Identification System using Rigorous Time-Delay Neural Network,'' \url{https://arxiv.org/abs/2405.16000}
+
+\bibitem{b5}A. Paul, S. Pahadsingh, T. Kar and Shruti, "Carnatic Classical Raga Identification Using Stacked Ensemble Learning Model," \textit{2024 1st International Conference on Cognitive, Green and Ubiquitous Computing (IC-CGU)}, Bhubaneswar, India, 2024, pp. 1-6, doi: 10.1109/IC-CGU58078.2024.10530796.   \url{https://ieeexplore.ieee.org/document/10530796}
+
+\bibitem{b6}S. M. Mothi, P. Govindarajan and S. Babu, "Comparative Study of the Working of Various AI Classifiers for Identifying Ragas of Indian Classical Music," \textit{2025 12th International Conference on Computing for Sustainable Global Development (INDIACom)}, Delhi, India, 2025, pp. 1-6, doi: 10.23919/INDIACom66777.2025.11115868.  \url{https://ieeexplore.ieee.org/document/11115868}
+
+\bibitem{b7}A. Singha, N. R. Rajalakshmi, J. Arun Pandian and S. Saravanan, "Deep Learning-Based Classification of Indian Classical Music Based on Raga," \textit{2023 6th International Conference on Information Systems and Computer Networks (ISCON)}, Mathura, India, 2023, pp. 1-7, doi: 10.1109/ISCON57294.2023.10111985.  \url{https://ieeexplore.ieee.org/document/10111985}
+
+\bibitem{b8}P. Singh and V. Arora, "Explainable Deep Learning Analysis for Raga Identification in Indian Art Music," in \textit{IEEE Transactions on Audio, Speech and Language Processing}, vol. 33, pp. 2302-2311, 2025, doi: 10.1109/TASLPRO.2025.3574839.   \url{https://ieeexplore.ieee.org/document/11020741}
+
+\bibitem{b9}N. Ananth, R. M. Bharadwaj, S. S. Shekar, S. Jain and V. R. Srividhya, "Investigation into the Identification of Ragas: A Detailed Analysis," \textit{2024 4th International Conference on Data Engineering and Communication Systems (ICDECS)}, Bangalore, India, 2024, pp. 1-6, doi: 10.1109/ICDECS59733.2023.10503571.  \url{https://ieeexplore.ieee.org/document/10503571}
+
+\bibitem{b10}Katerina Kosta, Wei Tsung Lu, Gabriele Medeot and Pierre Chanquion, ``Melody Extraction from Polyphonic Music by Deep Learning,'' in Proceedings of the 23rd ISMIR Conference, Bengaluru, India, December 4-8, 2022. \url{https://archives.ismir.net/ismir2022/paper/000091.pdf}
+
+\bibitem{b11} Koduri, G. K., Gulati, S., Rao, P., \& Serra, X. (2012), "Rāga Recognition based on Pitch Distribution Methods," \textit{Journal of New Music Research}, \textit{41}(4), 337–350.  \url{https://www.tandfonline.com/doi/abs/10.1080/09298215.2012.735246}
+
+\bibitem{b12}H G Ranjini, Deepak Paramashivan and Tippur V Sreenivas, ``Raga Space Visualization using Dimensionality Reduction Techniques,'' in Sådhanå (2019) 44:120 \url{https://www.ias.ac.in/public/Volumes/sadh/044/05/0120.pdf}
+
+\bibitem{b15}Namunu C. Maddage, Haizhou Li  et al., ``Vector Space Modelling for Microtonal Music Analysis,'' in SIGIR 2006: Proceedings of the 29th Annual International ACM SIGIR Conference on Research and Development in Information Retrieval, Seattle, Washington, USA, August 6-11, 2006. \url{https://www.researchgate.net/publication/221301017_Music_structure_based_vector_space_retrieval}
+
+\bibitem{b14}Z. -C. Fan, J. -S. R. Jang and C. -L. Lu, "Singing Voice Separation and Pitch Extraction from Monaural Polyphonic Audio Music via DNN and Adaptive Pitch Tracking," \textit{2016 IEEE Second International Conference on Multimedia Big Data (BigMM)}, Taipei, Taiwan, 2016, pp. 178-185, doi: 10.1109/BigMM.2016.56.  \url{https://ieeexplore.ieee.org/document/7545018}
+\end{thebibliography}
+\begin{thebibliography}{01}
+
+\bibitem {b1}Serrà, J., Ganguli, K. K., Sentürk, S., Serra, X., and Gulati, S. (2016). Indian Art Music Raga Recognition Dataset (audio) (1.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.7278511
+
+\bibitem{b2} PYIN (Pitch Detection): \texttt{https://github.com/librosa/librosa}
+\end{thebibliography}
+
+\EOD
+
+\end{document} 
