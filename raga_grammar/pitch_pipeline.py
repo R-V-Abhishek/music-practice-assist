@@ -274,6 +274,7 @@ class RealTimeGrammarPipeline:
         
         # Get summary from grammar validator
         grammar_summary = self.grammar_validator.get_validation_summary()
+        raga_info = get_raga_info(self.raga_name)
         
         # Audio duration
         duration_sec = frame_results[-1].timestamp_ms / 1000 if frame_results else 0
@@ -289,6 +290,7 @@ class RealTimeGrammarPipeline:
             'voiced_frames': voiced_frames,
             'total_errors': len(error_events),
             'error_rate': len(error_events) / max(voiced_frames, 1),
+            'special_phrases': raga_info.special_phrases if raga_info else [],
             'grammar_summary': grammar_summary,
             'error_events': error_events,
             'frame_results': frame_results  # Full detail for debugging
@@ -300,6 +302,8 @@ class RealTimeGrammarPipeline:
             print(f"  Sa frequency: {self.sa_frequency:.2f} Hz")
             print(f"  Errors detected: {len(error_events)} ({report['error_rate']:.1%})")
             print(f"  Analysis time: {analysis_time:.2f}s")
+            if report['special_phrases']:
+                print(f"  Special phrases: {[' -> '.join(p) for p in report['special_phrases']]}")
             
             if error_events:
                 print(f"\nError Breakdown:")

@@ -115,7 +115,8 @@ class FeedbackGenerator:
                            else ' -> '.join(raga_info.avarohana),
                 'sequence_name': 'Arohana' if event.direction == Direction.ASCENDING else 'Avarohana',
                 'arohana': ' -> '.join(raga_info.arohana),
-                'avarohana': ' -> '.join(raga_info.avarohana)
+                'avarohana': ' -> '.join(raga_info.avarohana),
+                'special_phrases': ', '.join(' -> '.join(phrase) for phrase in raga_info.special_phrases) or 'none'
             })
             
             # Add error-specific context
@@ -132,6 +133,11 @@ class FeedbackGenerator:
         
         # Add corrective suggestions
         feedback['correction'] = self._generate_correction_suggestion(event, raga_info)
+
+        if event.matched_special_phrase:
+            feedback['special_phrase'] = (
+                "Matched special phrase: " + ' -> '.join(event.matched_special_phrase)
+            )
         
         # Add pitch accuracy feedback if relevant
         if abs(event.cents_deviation) > 10:
@@ -146,7 +152,7 @@ class FeedbackGenerator:
             'title': "Correct Note",
             'message': f"✓ {event.swara} sung correctly in {raga_name}",
             'suggestion': "Good! Continue with proper raga grammar",
-            'explanation': f"This note fits the {event.direction.value} pattern well"
+            'explanation': self._build_positive_explanation(event, raga_name)
         }
     
     def _generate_generic_error(self, event: ValidationEvent, raga_name: str) -> Dict[str, str]:
@@ -194,8 +200,18 @@ class FeedbackGenerator:
         
         elif event.error_type == ErrorType.WRONG_DIRECTION:
             return f"Practice the proper {event.direction.value} sequence: {' -> '.join(raga_info.arohana if event.direction == Direction.ASCENDING else raga_info.avarohana)}"
+
+        elif event.matched_special_phrase:
+            return f"Keep reinforcing the special phrase: {' -> '.join(event.matched_special_phrase)}"
         
         return "Practice slowly to internalize the raga grammar"
+
+    def _build_positive_explanation(self, event: ValidationEvent, raga_name: str) -> str:
+        """Build positive explanation and mention special phrase matches when present."""
+        explanation = f"This note fits the {event.direction.value} pattern well"
+        if event.matched_special_phrase:
+            explanation += f" and completes the special phrase {' -> '.join(event.matched_special_phrase)}"
+        return explanation
     
     def _generate_pitch_feedback(self, event: ValidationEvent) -> str:
         """Generate feedback about pitch accuracy (apashruthi)"""
@@ -250,6 +266,7 @@ class FeedbackGenerator:
             'error_count': len(errors),
             'error_rate': f"{error_rate:.1%}",
             'pitch_accuracy': f"±{avg_deviation:.1f} cents average",
+            'special_phrase_hits': len([e for e in events if e.matched_special_phrase]),
         }
         
         # Performance assessment

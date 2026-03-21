@@ -45,6 +45,7 @@ class ValidationEvent:
     expected_swara: Optional[str] = None
     description: str = ""
     confidence: float = 1.0
+    matched_special_phrase: Optional[List[str]] = None
 
 class DirectionDetector:
     """Detects ascending/descending motion from swara sequence"""
@@ -264,6 +265,7 @@ class RagaGrammarValidator:
         self.raga_name = raga_name
         self.direction_detector = DirectionDetector()
         self.fsm = RagaGrammarFSM(self.raga_info)
+        self._phrase_history: List[str] = []
         
         # Validation history
         self.events: List[ValidationEvent] = []
@@ -286,6 +288,7 @@ class RagaGrammarValidator:
         
         swara = swara_result.swara
         direction = self.direction_detector.add_swara(swara)
+        matched_phrase = self._match_special_phrase(swara)
         
         # Layer 1: Immediate forbidden swara check
         forbidden_error = self._check_forbidden_swara(swara, direction)
@@ -299,7 +302,8 @@ class RagaGrammarValidator:
                 error_type=forbidden_error,
                 direction=direction,
                 description=f"Forbidden note {swara} in {direction.value} for {self.raga_name}",
-                confidence=swara_result.confidence
+                confidence=swara_result.confidence,
+                matched_special_phrase=matched_phrase
             )
             self.events.append(event)
             return event
@@ -317,8 +321,9 @@ class RagaGrammarValidator:
             error_type=sequence_error,
             direction=direction,
             expected_swara=expected_swaras[0] if expected_swaras else None,
-            description="Valid swara" if not sequence_error else f"Sequence violation: {sequence_error.value}",
-            confidence=swara_result.confidence
+            description=self._build_event_description(sequence_error, matched_phrase),
+            confidence=swara_result.confidence,
+            matched_special_phrase=matched_phrase
         )
         
         self.events.append(event)
@@ -332,6 +337,36 @@ class RagaGrammarValidator:
             return ErrorType.FORBIDDEN_NOTE
         
         return None
+
+    def _match_special_phrase(self, swara: str) -> Optional[List[str]]:
+        """Return the matched special phrase if the recent swara history completes one."""
+        self._phrase_history.append(swara)
+
+        max_phrase_len = max((len(phrase) for phrase in self.raga_info.special_phrases), default=0)
+        if max_phrase_len and len(self._phrase_history) > max_phrase_len:
+            self._phrase_history = self._phrase_history[-max_phrase_len:]
+
+        for phrase in self.raga_info.special_phrases:
+            if len(self._phrase_history) >= len(phrase) and self._phrase_history[-len(phrase):] == phrase:
+                return phrase
+
+        return None
+
+    def _build_event_description(
+        self,
+        sequence_error: Optional[ErrorType],
+        matched_phrase: Optional[List[str]],
+    ) -> str:
+        """Build event description with special phrase context when available."""
+        if sequence_error:
+            base_description = f"Sequence violation: {sequence_error.value}"
+        else:
+            base_description = "Valid swara"
+
+        if matched_phrase:
+            return f"{base_description}; matched special phrase: {' -> '.join(matched_phrase)}"
+
+        return base_description
     
     def get_validation_summary(self) -> Dict:
         """Get summary of all validation events"""
@@ -349,6 +384,8 @@ class RagaGrammarValidator:
             'total_errors': len(errors),
             'error_rate': len(errors) / max(total_events, 1),
             'error_breakdown': error_types,
+            'special_phrases': self.raga_info.special_phrases,
+            'matched_special_phrases': [e.matched_special_phrase for e in self.events if e.matched_special_phrase],
             'duration_ms': self.events[-1].timestamp_ms if self.events else 0
         }
     
@@ -356,6 +393,7 @@ class RagaGrammarValidator:
         """Reset validator state for new analysis"""
         self.direction_detector.reset()
         self.fsm.reset()
+        self._phrase_history.clear()
         self.events.clear()
         self.start_time = time.time()
     
