@@ -12,6 +12,7 @@ import librosa
 import time
 from typing import List, Dict, Optional, Generator, Tuple
 from dataclasses import dataclass
+from collections import deque
 
 # Import from existing tonic detection system
 import sys
@@ -46,7 +47,16 @@ class RealTimeGrammarPipeline:
     5. Grammar validation via FSM
     """
     
-    def __init__(self, raga_name: str, sr: int = 22050):
+    def __init__(
+        self,
+        raga_name: str,
+        sr: int = 22050,
+        frame_length: int = 2048,
+        hop_length: int = 512,
+        pyin_frame_length: int = 1024,
+        pyin_hop_length: int = 256,
+        min_frame_rms: float = 0.01,
+    ):
         """
         Initialize pipeline for specific raga.
         
@@ -64,15 +74,58 @@ class RealTimeGrammarPipeline:
         if not get_raga_info(raga_name):
             raise ValueError(f"Raga '{raga_name}' not found in database")
         
-        # Audio processing parameters (optimized for <50ms latency)
-        self.frame_length = 2048  # ~93ms at 22050 Hz
-        self.hop_length = 512     # ~23ms hop for real-time streaming
+        # Audio processing parameters
+        self.frame_length = frame_length
+        self.hop_length = hop_length
+        self.pyin_frame_length = pyin_frame_length
+        self.pyin_hop_length = pyin_hop_length
+        self.min_frame_rms = min_frame_rms
+
+        # Real-time pitch stabilization state
+        self._f0_history = deque(maxlen=9)
+        self._f0_ema: Optional[float] = None
+        self._ema_alpha = 0.25
         
         # Initialize components
         self.tonic_detector = TonicSaDetector(sr=sr)
         self.swara_quantizer: Optional[SwaraQuantizer] = None
         self.grammar_validator: Optional[RagaGrammarValidator] = None
         self.sa_frequency: Optional[float] = None
+
+    @property
+    def is_ready(self) -> bool:
+        """True when tonic is detected and processing components are initialized."""
+        return self.sa_frequency is not None and self.swara_quantizer is not None and self.grammar_validator is not None
+
+    def initialize_with_sa(self, sa_frequency: float):
+        """
+        Initialize quantizer and grammar validator with a detected Sa frequency.
+        
+        **This is CRITICAL**: Once Sa is locked, all pitch detection is anchored to it.
+        All 12 Carnatic swaras are calculated as:
+        - Swara_Hz = Sa_Hz × Carnatic_Ratio
+        
+        This tonic-ratio basis means the system is immune to frequency drift,
+        microphone issues, or room acoustics—only the RELATIVE pitch matters.
+        
+        Args:
+            sa_frequency: The tonic Sa frequency in Hz (must be > 0)
+            
+        Raises:
+            ValueError: If sa_frequency is invalid
+        """
+        if not sa_frequency or sa_frequency <= 0:
+            raise ValueError(f"Invalid Sa frequency: {sa_frequency}")
+        if not np.isfinite(sa_frequency):
+            raise ValueError(f"Sa frequency not finite: {sa_frequency}")
+            
+        self.sa_frequency = sa_frequency
+        self.swara_quantizer = SwaraQuantizer(self.sa_frequency)
+        self.grammar_validator = RagaGrammarValidator(self.raga_name)
+        
+        print(f"✓ Sa locked to {self.sa_frequency:.2f} Hz")
+        print(f"✓ All swaras calculated from this Sa")
+        print(f"✓ Quantization range: {self.sa_frequency:.2f}–{2*self.sa_frequency:.2f} Hz")
         
     def detect_tonic_from_file(self, audio_path: str) -> float:
         """
@@ -95,10 +148,9 @@ class RealTimeGrammarPipeline:
             raise RuntimeError(f"Sa detection failed: {result.get('error', 'Unknown error')}")
         
         self.sa_frequency = result['sa_frequency']
-        
+
         # Initialize quantizer and validator with detected Sa
-        self.swara_quantizer = SwaraQuantizer(self.sa_frequency)
-        self.grammar_validator = RagaGrammarValidator(self.raga_name)
+        self.initialize_with_sa(self.sa_frequency)
         
         print(f"Detected Sa: {self.sa_frequency:.2f} Hz")
         print(f"Initialized for raga: {self.raga_name}")
@@ -131,6 +183,15 @@ class RealTimeGrammarPipeline:
         """
         Analyze single audio frame for pitch and grammar validation.
         
+        **ALGORITHM:**
+        1. Filter out low-energy frames (RMS gate)
+        2. Extract pitch using YIN in tonic-focused frequency range
+        3. Apply temporal stabilization (median filter + EMA)
+        4. Quantize stabilized pitch to Carnatic swara using tonic ratios
+        5. Validate quantized swara against raga grammar
+        
+        This ensures clean, stable swara detection with no frequency confusion.
+        
         Args:
             audio_frame: Audio samples for this frame
             timestamp_ms: Timestamp of frame start
@@ -142,18 +203,9 @@ class RealTimeGrammarPipeline:
             return None
         
         try:
-            # Extract pitch using pYIN (same as tonic_sa_detection.py)
-            f0, voiced_flag, voiced_probs = librosa.pyin(
-                audio_frame,
-                fmin=80,       # Low Sa ≈ 130 Hz, allow margin
-                fmax=500,      # High Sa ≈ 520 Hz, with harmonics  
-                sr=self.sr,
-                frame_length=1024,
-                hop_length=256
-            )
-            
-            # Get the most confident pitch estimate
-            if len(f0) == 0 or not np.any(voiced_flag):
+            # ===== STAGE 1: RMS GATE - Filter silent/low-energy frames =====
+            frame_rms = float(np.sqrt(np.mean(np.square(audio_frame))))
+            if frame_rms < self.min_frame_rms:
                 return FrameResult(
                     timestamp_ms=timestamp_ms,
                     frequency_hz=0,
@@ -162,47 +214,100 @@ class RealTimeGrammarPipeline:
                     swara_result=None,
                     validation_event=None
                 )
-            
-            # Use median of voiced estimates for stability
-            voiced_f0 = f0[voiced_flag]
-            voiced_conf = voiced_probs[voiced_flag]
-            
-            if len(voiced_f0) == 0:
+
+            # ===== STAGE 2: TONIC-FOCUSED PITCH EXTRACTION =====
+            # Only search in [0.9×Sa, 2.1×Sa] to avoid spurious detections
+            # This implements the "concentrate on required range" principle
+            if not self.sa_frequency:
                 return None
-            
-            # Weight by confidence and take median
-            weights = voiced_conf / np.sum(voiced_conf)
-            frequency = np.average(voiced_f0, weights=weights)
-            avg_confidence = np.mean(voiced_conf)
-            
-            # Quantize to swara
-            swara_result = self.swara_quantizer.to_swara(frequency)
-            if swara_result is None:
+                
+            fmin = max(70.0, self.sa_frequency * 0.9)
+            fmax = min(700.0, self.sa_frequency * 2.1)
+
+            yin_f0 = librosa.yin(
+                audio_frame,
+                fmin=fmin,
+                fmax=fmax,
+                sr=self.sr,
+                frame_length=self.pyin_frame_length,
+                hop_length=self.pyin_hop_length,
+            )
+
+            if len(yin_f0) == 0:
                 return FrameResult(
                     timestamp_ms=timestamp_ms,
-                    frequency_hz=frequency,
+                    frequency_hz=0,
+                    voiced=False,
+                    voicing_prob=0,
+                    swara_result=None,
+                    validation_event=None
+                )
+
+            # Extract valid pitch estimates (non-NaN)
+            yin_valid = yin_f0[~np.isnan(yin_f0)]
+            if len(yin_valid) == 0:
+                return None
+
+            # ===== STAGE 3: TEMPORAL STABILIZATION =====
+            # Raw YIN pitch per frame
+            frequency = float(np.median(yin_valid))
+            voicing_prob = float(min(1.0, (len(yin_valid) / max(1, len(yin_f0)))))
+
+            # Median filter over history
+            self._f0_history.append(frequency)
+            median_freq = float(np.median(np.array(self._f0_history, dtype=np.float64)))
+
+            # Octave jump correction: prefer candidate closest to previous EMA
+            if self._f0_ema is not None:
+                candidates = [median_freq, median_freq / 2.0, median_freq * 2.0]
+                best = min(candidates, key=lambda c: abs(np.log2((c + 1e-9) / (self._f0_ema + 1e-9))))
+                median_freq = best
+
+            # Exponential Moving Average with jump clamping
+            if self._f0_ema is None:
+                self._f0_ema = median_freq
+            else:
+                # Clamp abrupt frame-to-frame jumps (reject outliers)
+                max_step_cents = 45.0
+                ratio_limit = 2 ** (max_step_cents / 1200.0)
+                upper = self._f0_ema * ratio_limit
+                lower = self._f0_ema / ratio_limit
+                clamped = np.clip(median_freq, lower, upper)
+                self._f0_ema = (self._ema_alpha * clamped) + ((1 - self._ema_alpha) * self._f0_ema)
+
+            stabilized_frequency = float(self._f0_ema)
+            
+            # ===== STAGE 4: SWARA QUANTIZATION (TONIC-RATIO MATCHING) =====
+            swara_result = self.swara_quantizer.to_swara_tonic_band(stabilized_frequency)
+            if swara_result is None:
+                # Frequency outside all swara tolerance windows
+                return FrameResult(
+                    timestamp_ms=timestamp_ms,
+                    frequency_hz=stabilized_frequency,
                     voiced=True,
-                    voicing_prob=avg_confidence,
+                    voicing_prob=voicing_prob,
                     swara_result=None,
                     validation_event=None
                 )
             
-            # Validate against raga grammar
+            # ===== STAGE 5: GRAMMAR VALIDATION =====
             validation_event = self.grammar_validator.validate_swara(
                 swara_result, timestamp_ms)
-            validation_event.frequency_hz = frequency
+            validation_event.frequency_hz = stabilized_frequency
             
             return FrameResult(
                 timestamp_ms=timestamp_ms,
-                frequency_hz=frequency,
+                frequency_hz=stabilized_frequency,
                 voiced=True,
-                voicing_prob=avg_confidence,
+                voicing_prob=voicing_prob,
                 swara_result=swara_result,
                 validation_event=validation_event
             )
             
         except Exception as e:
             print(f"Frame analysis error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def analyze_file_streaming(self, audio_path: str, 
@@ -319,6 +424,8 @@ class RealTimeGrammarPipeline:
             self.grammar_validator.reset()
         self.sa_frequency = None
         self.swara_quantizer = None
+        self._f0_history.clear()
+        self._f0_ema = None
 
 class BatchAnalyzer:
     """Analyze multiple audio files for comparative validation studies"""

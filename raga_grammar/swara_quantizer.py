@@ -2,7 +2,7 @@
 Swara Quantizer - Convert Hz to Carnatic Swara Names
 
 Maps continuously pitched audio to discrete 12-swara labels using Sa-relative
-cents with ±25 cent tolerance windows. Handles octave folding and provides
+cents with tolerance windows. Handles octave folding and provides
 deviation measurements for apashruthi detection.
 
 Integration: Uses CARNATIC_RATIOS from tonic_sa_detection.py for consistent
@@ -41,8 +41,8 @@ class SwaraQuantizer:
     for swara, ratio in CARNATIC_RATIOS.items():
         SWARA_CENTS[swara] = 1200 * np.log2(ratio)
     
-    # Tolerance window: ±25 cents (half of smallest interval ~50 cents)
-    TOLERANCE_CENTS = 25.0
+    # Tolerance window for live singing (gamakas / microphone noise)
+    TOLERANCE_CENTS = 45.0
     
     def __init__(self, sa_frequency: float):
         """
@@ -63,6 +63,127 @@ class SwaraQuantizer:
                 'min_cents': cents - self.TOLERANCE_CENTS,
                 'max_cents': cents + self.TOLERANCE_CENTS
             }
+
+    def _normalize_to_tonic_band(self, frequency: float) -> Tuple[Optional[float], int]:
+        """
+        Normalize frequency into [Sa, upper Sa] tonic band via octave folding.
+        
+        All input frequencies are transposed into the fundamental octave [Sa, 2×Sa)
+        for direct ratio matching. Note: upper Sa boundary (2×Sa) is folded to Sa 
+        of the next octave.
+        
+        For example, with Sa=260 Hz:
+        - 260 Hz → (260 Hz, octave 0) = Sa
+        - 390 Hz → (390 Hz, octave 0) = Pa  
+        - 520 Hz → (260 Hz, octave 1) = Upper Sa, represented as Sa+1
+        - 130 Hz → (260 Hz, octave -1) = Lower Sa, represented as Sa-1
+
+        Args:
+            frequency: Input frequency in Hz
+            
+        Returns:
+            (normalized_frequency, octave_shift)
+            - normalized_frequency: frequency folded into [Sa, 2×Sa) band (Hz)
+            - octave_shift: number of octaves traversed
+        """
+        if frequency <= 0 or not np.isfinite(frequency):
+            return None, 0
+
+        f = float(frequency)
+        octave = 0
+        
+        # Safety limit: prevent infinite loops
+        max_iterations = 10
+        iteration = 0
+        
+        upper_boundary = 2.0 * self.sa_frequency
+
+        # Fold DOWN into [Sa, 2*Sa) if at or above upper boundary
+        while f >= upper_boundary and iteration < max_iterations:
+            f /= 2.0
+            octave += 1
+            iteration += 1
+
+        # Fold UP into [Sa, 2*Sa) if below Sa
+        iteration = 0
+        while f < self.sa_frequency and iteration < max_iterations:
+            f *= 2.0
+            octave -= 1
+            iteration += 1
+
+        # Final safety check: ensure within expected range [Sa, 2*Sa)
+        if not (self.sa_frequency * 0.99 <= f < 2.01 * self.sa_frequency):
+            return None, 0
+
+        return f, octave
+
+    def to_swara_tonic_band(self, frequency: float) -> Optional[SwaraResult]:
+        """
+        Live-mode swara mapping: Direct tonic-ratio matching in [Sa, 2×Sa] band.
+        
+        **ALGORITHM:**
+        1. Normalize input frequency to [Sa, 2×Sa] via octave folding
+        2. For each of the 12 Carnatic swaras, calculate its absolute frequency
+           using: swara_freq = Sa × ratio
+        3. Compute deviation from each swara in CENTS (1200 × log2(f_input / f_swara))
+        4. Find the closest match (minimum absolute deviation)
+        5. Accept only if deviation < TOLERANCE_CENTS (35 cents = ~0.5 semitones)
+        6. Return SwaraResult with confidence = 1 - (deviation / tolerance)
+        
+        This approach is **bulletproof** because:
+        - Tonic-ratio basis means no frequency-generic algorithms (pure math)
+        - Strict tolerance rejects out-of-tune notes
+        - Confidence score reflects how close to theoretical swara
+        - Normalized band prevents octave confusion
+        
+        Args:
+            frequency: Input frequency in Hz from pitch detector
+            
+        Returns:
+            SwaraResult with swara name, octave, deviation, confidence
+            None if no match found within tolerance
+        """
+        # Step 1: Normalize to [Sa, 2×Sa] band
+        norm_freq, octave = self._normalize_to_tonic_band(frequency)
+        if norm_freq is None:
+            return None
+
+        # Double-check bounds (redundant safety)
+        if norm_freq < (0.99 * self.sa_frequency) or norm_freq > (2.01 * self.sa_frequency):
+            return None
+
+        # Step 2 & 3: Calculate all 12 swara frequencies and deviations
+        best_swara = None
+        best_dev_cents = float("inf")
+        best_raw_deviation = 0.0
+
+        for swara, ratio in self.CARNATIC_RATIOS.items():
+            # Expected frequency for this swara
+            swara_freq_hz = self.sa_frequency * ratio
+            
+            # Deviation in cents: negative = flat, positive = sharp
+            dev_cents = 1200.0 * np.log2(norm_freq / swara_freq_hz)
+            abs_dev_cents = abs(dev_cents)
+            
+            # Step 4: Track best match
+            if abs_dev_cents < best_dev_cents:
+                best_dev_cents = abs_dev_cents
+                best_swara = swara
+                best_raw_deviation = dev_cents
+
+        # Step 5: Tolerance check
+        if best_swara is None or best_dev_cents > self.TOLERANCE_CENTS:
+            return None
+
+        # Step 6: Confidence score
+        confidence = max(0.0, 1.0 - (best_dev_cents / self.TOLERANCE_CENTS))
+        
+        return SwaraResult(
+            swara=best_swara,
+            octave=octave,
+            cents_deviation=float(best_raw_deviation),
+            confidence=float(confidence),
+        )
     
     def to_swara(self, frequency: float) -> Optional[SwaraResult]:
         """

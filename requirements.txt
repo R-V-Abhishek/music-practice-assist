@@ -16,5 +16,11 @@ typing-extensions>=4.0.0  # For advanced type hints
 pytest>=7.0.0
 pytest-cov>=4.0.0
 
+# Lightweight web dashboard
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.8.0
+websockets>=12.0
+
 # Audio format support extensions
 soundfile>=0.10.0  # For additional audio format support beyond librosa defaults

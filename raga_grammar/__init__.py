@@ -12,20 +12,25 @@ Components:
 - feedback_generator: Human-readable error messages
 """
 
-from .raga_database import RAGA_DB, get_raga_info, get_melakarta_raga
+from .raga_database import RAGA_DB, get_raga_info, get_melakarta_raga, list_available_ragas
 from .swara_quantizer import SwaraQuantizer
 from .grammar_validator import RagaGrammarValidator, ValidationEvent
 from .pitch_pipeline import RealTimeGrammarPipeline
-from .feedback_generator import FeedbackGenerator
+from .feedback_generator import FeedbackGenerator, Language
+from .live_audio_processor import LiveAudioProcessor, LiveProcessorConfig
 
 __version__ = "1.0.0"
 __all__ = [
     "RAGA_DB",
     "get_raga_info", 
     "get_melakarta_raga",
+    "list_available_ragas",
     "SwaraQuantizer",
     "RagaGrammarValidator", 
     "ValidationEvent",
     "RealTimeGrammarPipeline",
-    "FeedbackGenerator"
+    "FeedbackGenerator",
+    "Language",
+    "LiveAudioProcessor",
+    "LiveProcessorConfig",
 ]
