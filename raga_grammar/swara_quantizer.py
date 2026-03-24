@@ -42,7 +42,7 @@ class SwaraQuantizer:
         SWARA_CENTS[swara] = 1200 * np.log2(ratio)
     
     # Tolerance window for live singing (gamakas / microphone noise)
-    TOLERANCE_CENTS = 45.0
+    TOLERANCE_CENTS = 50.0
     
     def __init__(self, sa_frequency: float):
         """
@@ -117,7 +117,7 @@ class SwaraQuantizer:
 
         return f, octave
 
-    def to_swara_tonic_band(self, frequency: float) -> Optional[SwaraResult]:
+    def to_swara_tonic_band(self, frequency: float, tolerance_cents: Optional[float] = None) -> Optional[SwaraResult]:
         """
         Live-mode swara mapping: Direct tonic-ratio matching in [Sa, 2×Sa] band.
         
@@ -148,6 +148,8 @@ class SwaraQuantizer:
         if norm_freq is None:
             return None
 
+        tol = float(self.TOLERANCE_CENTS if tolerance_cents is None else tolerance_cents)
+
         # Double-check bounds (redundant safety)
         if norm_freq < (0.99 * self.sa_frequency) or norm_freq > (2.01 * self.sa_frequency):
             return None
@@ -172,11 +174,11 @@ class SwaraQuantizer:
                 best_raw_deviation = dev_cents
 
         # Step 5: Tolerance check
-        if best_swara is None or best_dev_cents > self.TOLERANCE_CENTS:
+        if best_swara is None or best_dev_cents > tol:
             return None
 
         # Step 6: Confidence score
-        confidence = max(0.0, 1.0 - (best_dev_cents / self.TOLERANCE_CENTS))
+        confidence = max(0.0, 1.0 - (best_dev_cents / tol))
         
         return SwaraResult(
             swara=best_swara,

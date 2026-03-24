@@ -2,7 +2,7 @@ class ChunkCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.buffer = [];
-    this.bufferSize = 256;
+    this.bufferSize = 1024;
   }
 
   process(inputs) {

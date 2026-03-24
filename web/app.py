@@ -70,6 +70,7 @@ async def live_ws(websocket: WebSocket, session_id: str):
         return
 
     await websocket.accept()
+    print(f"WebSocket connected for session {session_id}")
 
     try:
         while True:
@@ -88,18 +89,22 @@ async def live_ws(websocket: WebSocket, session_id: str):
             sample_rate = int(payload.get("sample_rate", 0))
 
             if not audio_b64 or sample_rate <= 0:
+                print(f"Invalid audio params: b64={bool(audio_b64)}, sr={sample_rate}")
                 await websocket.send_json({"type": "error", "message": "Missing audio_b64/sample_rate"})
                 continue
 
             try:
                 raw = base64.b64decode(audio_b64)
                 audio = np.frombuffer(raw, dtype=np.float32)
-            except Exception:
-                await websocket.send_json({"type": "error", "message": "Invalid PCM payload"})
+                print(f"Received audio chunk: {len(audio)} samples @ {sample_rate} Hz")
+            except Exception as e:
+                print(f"Audio decode error: {e}")
+                await websocket.send_json({"type": "error", "message": f"Invalid PCM payload: {str(e)}"})
                 continue
 
             result = session.processor.process_audio_chunk(audio_chunk=audio, chunk_sr=sample_rate)
             await websocket.send_json(result)
 
     except WebSocketDisconnect:
+        print(f"WebSocket disconnected for session {session_id}")
         return

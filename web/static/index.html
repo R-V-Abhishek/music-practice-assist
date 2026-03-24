@@ -169,7 +169,7 @@
           if (event.swara) swaraEl.textContent = event.swara;
           pitchEl.textContent = `${event.frequency_hz ?? '-'} Hz`;
 
-          if (Number.isInteger(event.swara_index) && event.swara_index >= 0 && (event.swara_confidence ?? 0) >= 0.45) {
+          if (Number.isInteger(event.swara_index) && event.swara_index >= 0 && (event.swara_confidence ?? 0) >= 0.25) {
             if (lastGraphTs < 0 || (event.timestamp_ms - lastGraphTs) >= graphUpdateIntervalMs) {
               const raw = event.swara_index;
               if (lastSmoothIndex === null) {
@@ -222,16 +222,74 @@
         handleServerEvents(payload);
       };
 
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        alertsEl.textContent = 'WebSocket connection error';
+        alertsEl.className = 'alert';
+      };
+
+      ws.onclose = async () => {
+        console.log('WebSocket closed');
+        if (workletNode) workletNode.disconnect();
+        if (sourceNode) sourceNode.disconnect();
+        if (audioContext) await audioContext.close();
+        if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+      };
+
       ws.onopen = async () => {
+        await setupAudioCapture();
+      };
+    }
+
+    async function setupAudioCapture() {
+      try {
+        console.log('Checking for getUserMedia...');
+
+        const fallbackGetUserMedia = () => {
+          const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+          if (!legacy) return null;
+          return (constraints) => new Promise((resolve, reject) => {
+            legacy.call(navigator, constraints, resolve, reject);
+          });
+        };
+
+        let getUserMediaFn = null;
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          getUserMediaFn = (constraints) => navigator.mediaDevices.getUserMedia(constraints);
+        } else {
+          getUserMediaFn = fallbackGetUserMedia();
+        }
+
+        if (!getUserMediaFn) {
+          throw new Error('Microphone API unavailable. Use HTTPS or localhost, and allow microphone permission.');
+        }
+
         statusEl.textContent = 'bootstrapping';
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioContext = new AudioContext();
+        console.log('Requesting microphone access...');
+        mediaStream = await getUserMediaFn({ audio: { echoCancellation: false } });
+        console.log('Got microphone stream:', mediaStream.getAudioTracks().length, 'audio tracks');
+        
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('AudioContext created, sampleRate:', audioContext.sampleRate);
+        
+        console.log('Loading audio worklet...');
         await audioContext.audioWorklet.addModule('/static/audio-worklet.js');
+        console.log('Worklet module loaded');
+        
         sourceNode = audioContext.createMediaStreamSource(mediaStream);
         workletNode = new AudioWorkletNode(audioContext, 'chunk-capture-processor');
+        console.log('Worklet node created');
 
+        let chunkCount = 0;
         workletNode.port.onmessage = (e) => {
-          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          chunkCount++;
+          if (chunkCount <= 3) {
+            console.log('Audio worklet firing, chunk #' + chunkCount);
+          }
+          if (!ws || ws.readyState !== WebSocket.OPEN) {
+            if (chunkCount === 1) console.warn('WebSocket not ready yet');
+            return;
+          }
           const chunk = e.data;
           ws.send(JSON.stringify({
             type: 'audio_chunk',
@@ -241,8 +299,12 @@
           }));
         };
 
+        workletNode.port.onmessageerror = (e) => {
+          console.error('Worklet port error:', e);
+        };
+
         sourceNode.connect(workletNode);
-        workletNode.connect(audioContext.destination);
+        console.log('Audio stream connected to worklet');
 
         startBtn.disabled = true;
         stopBtn.disabled = false;
@@ -253,7 +315,16 @@
         currentSwaraIndex = null;
         lastGraphPushMs = performance.now();
         drawSwaraGraph();
-      };
+        console.log('Audio capture ready');
+      } catch (err) {
+        console.error('Error during audio setup:', err);
+        alertsEl.textContent = `Audio error: ${err.message}`;
+        alertsEl.className = 'alert';
+        statusEl.textContent = 'error';
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      }
     }
 
     async function stopSession() {

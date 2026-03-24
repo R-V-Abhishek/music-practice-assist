@@ -35,7 +35,7 @@ class LiveProcessorConfig:
     pyin_frame_length: int = 512
     pyin_hop_length: int = 128
     min_frame_rms: float = 0.02
-    min_swara_confidence: float = 0.45
+    min_swara_confidence: float = 0.25
 
 
 class LiveAudioProcessor:
@@ -61,10 +61,38 @@ class LiveAudioProcessor:
 
         self._tonic_locked = False
         self._tonic_hz: Optional[float] = None
+        self._input_sr: Optional[int] = None
 
         self._consecutive_forbidden = 0
         self._consecutive_clean = 0
         self._forbidden_alert_active = False
+
+    def _reconfigure_for_input_sr(self, input_sr: int) -> None:
+        """Bind pipeline to mic sample rate and preserve time-window durations."""
+        if input_sr <= 0 or input_sr == self.config.target_sr:
+            return
+
+        ratio = float(input_sr) / float(self.config.target_sr)
+
+        self.config.target_sr = int(input_sr)
+        self.config.frame_length = max(256, int(round(self.config.frame_length * ratio)))
+        self.config.hop_length = max(64, int(round(self.config.hop_length * ratio)))
+        self.config.pyin_frame_length = max(256, int(round(self.config.pyin_frame_length * ratio)))
+        self.config.pyin_hop_length = max(64, int(round(self.config.pyin_hop_length * ratio)))
+
+        self.pipeline = RealTimeGrammarPipeline(
+            raga_name=self.raga_name,
+            sr=self.config.target_sr,
+            frame_length=self.config.frame_length,
+            hop_length=self.config.hop_length,
+            pyin_frame_length=self.config.pyin_frame_length,
+            pyin_hop_length=self.config.pyin_hop_length,
+            min_frame_rms=self.config.min_frame_rms,
+        )
+
+        self._audio_buffer = np.array([], dtype=np.float32)
+        self._bootstrap_buffer = np.array([], dtype=np.float32)
+        self._processed_samples = 0
 
     @property
     def stage(self) -> str:
@@ -192,6 +220,10 @@ class LiveAudioProcessor:
         """
         if audio_chunk.ndim != 1:
             audio_chunk = np.mean(audio_chunk, axis=1)
+
+        if self._input_sr is None:
+            self._input_sr = int(chunk_sr)
+            self._reconfigure_for_input_sr(self._input_sr)
 
         chunk = self._resample_if_needed(audio_chunk, chunk_sr)
         if len(chunk) == 0:
