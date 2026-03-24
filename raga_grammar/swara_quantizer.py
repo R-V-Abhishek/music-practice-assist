@@ -31,9 +31,9 @@ class SwaraQuantizer:
     
     # Carnatic note ratios from Sa (imported from tonic_sa_detection.py logic)
     CARNATIC_RATIOS = {
-        'Sa': 1.0, 'Ri1': 256/243, 'Ri2': 9/8, 'Ga1': 32/27,
-        'Ga2': 5/4, 'Ma1': 4/3, 'Ma2': 45/32, 'Pa': 3/2,
-        'Dha1': 128/81, 'Dha2': 5/3, 'Ni1': 16/9, 'Ni2': 15/8,
+        'Sa': 1.0, 'Ri1': 256/243, 'Ri2': 9/8, 'Ga2': 32/27,
+        'Ga3': 5/4, 'Ma1': 4/3, 'Ma2': 45/32, 'Pa': 3/2,
+        'Dha1': 128/81, 'Dha2': 5/3, 'Ni2': 16/9, 'Ni3': 15/8,
     }
     
     # Convert ratios to cents for easier comparison
@@ -43,6 +43,16 @@ class SwaraQuantizer:
     
     # Tolerance window for live singing (gamakas / microphone noise)
     TOLERANCE_CENTS = 50.0
+
+    # If a low-confidence Ni3 sits very close to an octave Sa anchor,
+    # prefer Sa to suppress harmonic-doubling confusion.
+    SA_ANCHOR_SNAP_CENTS = 75.0
+    NI3_SNAP_CONFIDENCE_MAX = 0.65
+
+    # Supported live range relative to tonic:
+    # anumaandra Sa (Sa/2) to ati taara Sa (4*Sa)
+    MIN_OCTAVE_OFFSET = -1
+    MAX_OCTAVE_OFFSET = 2
     
     def __init__(self, sa_frequency: float):
         """
@@ -52,6 +62,8 @@ class SwaraQuantizer:
             sa_frequency: Tonic Sa frequency in Hz (from TonicSaDetector)
         """
         self.sa_frequency = sa_frequency
+        self.min_supported_frequency = self.sa_frequency * (2 ** self.MIN_OCTAVE_OFFSET)
+        self.max_supported_frequency = self.sa_frequency * (2 ** self.MAX_OCTAVE_OFFSET)
         
         # Pre-compute swara frequency boundaries for fast lookup
         self._swara_boundaries = {}
@@ -63,6 +75,16 @@ class SwaraQuantizer:
                 'min_cents': cents - self.TOLERANCE_CENTS,
                 'max_cents': cents + self.TOLERANCE_CENTS
             }
+
+    def get_supported_frequency_range(self) -> Tuple[float, float]:
+        """Return supported quantization range in Hz."""
+        return self.min_supported_frequency, self.max_supported_frequency
+
+    def is_frequency_in_range(self, frequency: float) -> bool:
+        """Check whether an input frequency is inside supported live range."""
+        if frequency <= 0 or not np.isfinite(frequency):
+            return False
+        return self.min_supported_frequency <= frequency <= self.max_supported_frequency
 
     def _normalize_to_tonic_band(self, frequency: float) -> Tuple[Optional[float], int]:
         """
@@ -143,6 +165,9 @@ class SwaraQuantizer:
             SwaraResult with swara name, octave, deviation, confidence
             None if no match found within tolerance
         """
+        if not self.is_frequency_in_range(frequency):
+            return None
+
         # Step 1: Normalize to [Sa, 2×Sa] band
         norm_freq, octave = self._normalize_to_tonic_band(frequency)
         if norm_freq is None:
@@ -165,6 +190,12 @@ class SwaraQuantizer:
             
             # Deviation in cents: negative = flat, positive = sharp
             dev_cents = 1200.0 * np.log2(norm_freq / swara_freq_hz)
+            # Wrap to nearest equivalent within one octave so frequencies near
+            # upper Sa (2*Sa - eps) can still map to Sa, not Ni3.
+            while dev_cents > 600.0:
+                dev_cents -= 1200.0
+            while dev_cents < -600.0:
+                dev_cents += 1200.0
             abs_dev_cents = abs(dev_cents)
             
             # Step 4: Track best match
@@ -179,6 +210,22 @@ class SwaraQuantizer:
 
         # Step 6: Confidence score
         confidence = max(0.0, 1.0 - (best_dev_cents / tol))
+
+        # Correct common low-register confusion: base Sa harmonics can be
+        # detected slightly below upper Sa and appear as low-confidence Ni3.
+        if best_swara == 'Ni3' and confidence < self.NI3_SNAP_CONFIDENCE_MAX:
+            sa_octave = int(np.round(np.log2(float(frequency) / self.sa_frequency)))
+            sa_anchor_hz = self.sa_frequency * (2 ** sa_octave)
+            sa_anchor_dev = 1200.0 * np.log2(float(frequency) / sa_anchor_hz)
+
+            if abs(sa_anchor_dev) <= self.SA_ANCHOR_SNAP_CENTS:
+                sa_conf = max(0.0, 1.0 - (abs(sa_anchor_dev) / self.SA_ANCHOR_SNAP_CENTS))
+                return SwaraResult(
+                    swara='Sa',
+                    octave=sa_octave,
+                    cents_deviation=float(sa_anchor_dev),
+                    confidence=float(sa_conf),
+                )
         
         return SwaraResult(
             swara=best_swara,

@@ -69,6 +69,16 @@ class RealTimeGrammarPipeline:
         """
         self.raga_name = raga_name
         self.sr = sr
+
+        # Transition responsiveness tuning.
+        # These defaults prioritize fluid live practice while retaining stability.
+        self._hysteresis_fast_switch_conf = 0.76
+        self._hysteresis_candidate_min_count = 2
+        self._hysteresis_candidate_switch_conf = 0.52
+        self._min_duration_hold_ms = 38.0
+        self._min_duration_low_motion_st_per_sec = 10.0
+        self._min_duration_not_strong_conf = 0.78
+        self._majority_hold_conf_max = 0.45
         
         # Verify raga exists
         if not get_raga_info(raga_name):
@@ -132,10 +142,12 @@ class RealTimeGrammarPipeline:
         self.sa_frequency = sa_frequency
         self.swara_quantizer = SwaraQuantizer(self.sa_frequency)
         self.grammar_validator = RagaGrammarValidator(self.raga_name)
+
+        qmin_hz, qmax_hz = self.swara_quantizer.get_supported_frequency_range()
         
         print(f"✓ Sa locked to {self.sa_frequency:.2f} Hz")
         print(f"✓ All swaras calculated from this Sa")
-        print(f"✓ Quantization range: {self.sa_frequency:.2f}–{2*self.sa_frequency:.2f} Hz")
+        print(f"✓ Quantization range: {qmin_hz:.2f}–{qmax_hz:.2f} Hz")
         
     def detect_tonic_from_file(self, audio_path: str) -> float:
         """
@@ -180,13 +192,21 @@ class RealTimeGrammarPipeline:
         # Save to temporary file for tonic detection
         import tempfile
         import soundfile as sf
-        
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-            try:
-                sf.write(tmp.name, y, self.sr)
-                return self.detect_tonic_from_file(tmp.name)
-            finally:
-                os.unlink(tmp.name)  # Clean up temp file
+
+        fd, tmp_path = tempfile.mkstemp(suffix='.wav')
+        os.close(fd)
+
+        try:
+            sf.write(tmp_path, y, self.sr)
+            return self.detect_tonic_from_file(tmp_path)
+        finally:
+            for _ in range(3):
+                try:
+                    os.unlink(tmp_path)  # Clean up temp file
+                    break
+                except PermissionError:
+                    # On Windows, readers may keep a short-lived file lock.
+                    time.sleep(0.05)
 
     def _apply_swara_hysteresis(self, swara_result: SwaraResult) -> SwaraResult:
         """
@@ -214,7 +234,7 @@ class RealTimeGrammarPipeline:
             return swara_result
 
         # Strong evidence: allow immediate switch
-        if swara_result.confidence >= 0.82:
+        if swara_result.confidence >= self._hysteresis_fast_switch_conf:
             self._stable_swara = swara_result.swara
             self._candidate_swara = None
             self._candidate_count = 0
@@ -228,7 +248,10 @@ class RealTimeGrammarPipeline:
             self._candidate_count = 1
 
         # Switch only after repeated evidence
-        if self._candidate_count >= 2 and swara_result.confidence >= 0.58:
+        if (
+            self._candidate_count >= self._hysteresis_candidate_min_count
+            and swara_result.confidence >= self._hysteresis_candidate_switch_conf
+        ):
             self._stable_swara = swara_result.swara
             self._candidate_swara = None
             self._candidate_count = 0
@@ -335,9 +358,9 @@ class RealTimeGrammarPipeline:
             return swara_result
 
         elapsed_ms = float(timestamp_ms - (self._last_output_change_ms or timestamp_ms))
-        short_deviation = elapsed_ms < 60.0
-        low_motion = slope_st_per_sec < 15.0
-        not_very_strong = swara_result.confidence < 0.86
+        short_deviation = elapsed_ms < self._min_duration_hold_ms
+        low_motion = slope_st_per_sec < self._min_duration_low_motion_st_per_sec
+        not_very_strong = swara_result.confidence < self._min_duration_not_strong_conf
 
         if short_deviation and low_motion and not_very_strong:
             held = self.swara_quantizer.to_swara_tonic_band(
@@ -497,9 +520,10 @@ class RealTimeGrammarPipeline:
         # Apply analysis window
         x = x * np.hanning(n)
 
-        # Tonic-focused frequency range for lag search
-        fmin = max(70.0, self.sa_frequency * 0.9)
-        fmax = min(700.0, self.sa_frequency * 2.1)
+        # Tonic-anchored range from anumaandra Sa to ati taara Sa.
+        qmin_hz, qmax_hz = self.swara_quantizer.get_supported_frequency_range()
+        fmin = max(60.0, qmin_hz * 0.95)
+        fmax = min(1200.0, qmax_hz * 1.05)
         lag_min = int(max(1, np.floor(self.sr / fmax)))
         lag_max = int(min(n - 2, np.ceil(self.sr / fmin)))
         if lag_max <= lag_min:
@@ -565,8 +589,9 @@ class RealTimeGrammarPipeline:
         if self.swara_quantizer is None or self.sa_frequency is None:
             return None
 
-        fmin = max(70.0, self.sa_frequency * 0.9)
-        fmax = min(700.0, self.sa_frequency * 2.1)
+        qmin_hz, qmax_hz = self.swara_quantizer.get_supported_frequency_range()
+        fmin = max(60.0, qmin_hz * 0.95)
+        fmax = min(1200.0, qmax_hz * 1.05)
 
         yin_f0 = librosa.yin(
             audio_frame,
@@ -803,7 +828,11 @@ class RealTimeGrammarPipeline:
                 for s in self._swara_history:
                     counts[s] = counts.get(s, 0) + 1
                 dominant_swara, dominant_count = max(counts.items(), key=lambda kv: kv[1])
-                if dominant_count >= 2 and dominant_swara != swara_result.swara and swara_result.confidence < 0.55:
+                if (
+                    dominant_count >= 2
+                    and dominant_swara != swara_result.swara
+                    and swara_result.confidence < self._majority_hold_conf_max
+                ):
                     corrected = self.swara_quantizer.to_swara_tonic_band(
                         self.swara_quantizer.get_swara_frequency(dominant_swara, swara_result.octave)
                     )
