@@ -254,10 +254,6 @@ class LiveAudioProcessor:
             result = self.pipeline.analyze_frame(frame, ts_ms)
 
             if result is not None and result.voicing_prob >= self.config.min_voicing_prob:
-                if result.swara_result is not None and result.swara_result.confidence < self.config.min_swara_confidence:
-                    self._audio_buffer = self._audio_buffer[hop:]
-                    self._processed_samples += hop
-                    continue
                 events.append(self._frame_to_event(result))
                 events.extend(self._build_alert_events(result))
 

@@ -71,13 +71,13 @@ class RealTimeGrammarPipeline:
         self.sr = sr
 
         # Transition responsiveness tuning.
-        # These defaults prioritize fluid live practice while retaining stability.
-        self._hysteresis_fast_switch_conf = 0.76
-        self._hysteresis_candidate_min_count = 2
-        self._hysteresis_candidate_switch_conf = 0.52
-        self._min_duration_hold_ms = 38.0
+        # Tuned to be highly responsive to match the old UI's speed
+        self._hysteresis_fast_switch_conf = 0.55
+        self._hysteresis_candidate_min_count = 1
+        self._hysteresis_candidate_switch_conf = 0.35
+        self._min_duration_hold_ms = 10.0
         self._min_duration_low_motion_st_per_sec = 10.0
-        self._min_duration_not_strong_conf = 0.78
+        self._min_duration_not_strong_conf = 0.85
         self._majority_hold_conf_max = 0.45
         
         # Verify raga exists
@@ -270,32 +270,9 @@ class RealTimeGrammarPipeline:
     def _apply_frequency_continuity(self, frequency_hz: float, timestamp_ms: float) -> float:
         """
         Apply continuity constraint to limit abrupt octave-like jumps.
-
-        Dynamic-programming-like local continuity: clamp frame-to-frame jump
-        in semitones while keeping latency low.
+        Disabled for maximum snappiness.
         """
-        if frequency_hz <= 0:
-            return frequency_hz
-
-        if self._last_frequency_hz is None or self._last_timestamp_ms is None:
-            return frequency_hz
-
-        dt_sec = max((timestamp_ms - self._last_timestamp_ms) / 1000.0, 1e-3)
-
-        # At ~10ms hops this is ~7 semitone/frame. Scales with dt.
-        max_jump_per_10ms = 7.0
-        max_jump_semitones = max_jump_per_10ms * (dt_sec / 0.01)
-
-        st = 12.0 * np.log2((frequency_hz + 1e-9) / (self._last_frequency_hz + 1e-9))
-        if abs(st) <= max_jump_semitones:
-            clamped = frequency_hz
-        else:
-            ratio = 2 ** (max_jump_semitones / 12.0)
-            upper = self._last_frequency_hz * ratio
-            lower = self._last_frequency_hz / ratio
-            clamped = float(np.clip(frequency_hz, lower, upper))
-
-        return clamped
+        return frequency_hz
 
     def _commit_frequency_state(self, frequency_hz: float, timestamp_ms: float) -> None:
         """Commit frequency state after final per-frame decision."""
@@ -427,7 +404,7 @@ class RealTimeGrammarPipeline:
         spectrum = np.abs(np.fft.rfft(windowed, n=n_fft))
         freqs = np.fft.rfftfreq(n_fft, d=1.0 / self.sr)
 
-        band_mask = (freqs >= max(40.0, 0.5 * self.sa_frequency)) & (freqs <= min(self.sr / 2.0, 4.0 * self.sa_frequency))
+        band_mask = (freqs >= max(30.0, 0.25 * self.sa_frequency)) & (freqs <= min(self.sr / 2.0, 4.0 * self.sa_frequency))
         if not np.any(band_mask):
             return None
 
@@ -753,51 +730,42 @@ class RealTimeGrammarPipeline:
                     validation_event=None
                 )
 
-            if acpt_estimate is not None and spectral_estimate is not None:
-                sw_acpt, f_acpt, v_acpt = acpt_estimate
-                sw_spec, f_spec, v_spec = spectral_estimate
-
-                last_swara = self._swara_history[-1] if len(self._swara_history) > 0 else None
-
-                if sw_acpt.swara == sw_spec.swara:
-                    swara_result = sw_acpt
-                    swara_result.confidence = float(np.clip(0.65 * sw_acpt.confidence + 0.35 * sw_spec.confidence, 0.0, 1.0))
-                    stabilized_frequency = float((0.65 * f_acpt) + (0.35 * f_spec))
-                    voicing_prob = float(np.clip(0.65 * v_acpt + 0.35 * v_spec, 0.0, 1.0))
-                else:
-                    acpt_score = sw_acpt.confidence + (0.15 if last_swara == sw_acpt.swara else 0.0)
-                    spec_score = sw_spec.confidence + (0.10 if last_swara == sw_spec.swara else 0.0)
-
-                    if abs(acpt_score - spec_score) < 0.10:
-                        pick_acpt = abs(sw_acpt.cents_deviation) <= abs(sw_spec.cents_deviation)
-                    else:
-                        pick_acpt = acpt_score > spec_score
-
-                    if pick_acpt:
-                        swara_result, stabilized_frequency, voicing_prob = sw_acpt, f_acpt, v_acpt
-                    else:
-                        swara_result, stabilized_frequency, voicing_prob = sw_spec, f_spec, v_spec
-            elif acpt_estimate is not None:
+            if acpt_estimate is not None:
                 swara_result, stabilized_frequency, voicing_prob = acpt_estimate
-            elif spectral_estimate is not None:
-                swara_result, stabilized_frequency, voicing_prob = spectral_estimate
-            else:
+            elif yin_estimate is not None:
                 swara_result, stabilized_frequency, voicing_prob = yin_estimate
+            else:
+                swara_result, stabilized_frequency, voicing_prob = spectral_estimate
+
+            # If we reached here, we have a valid swara_result, stabilized_frequency, and voicing_prob
+            # from one of the estimators.
+            # The original code had a complex combination logic for acpt_estimate and spectral_estimate
+            # when both were present. The new instruction implies prioritizing one over the other
+            # rather than combining them. So, if acpt_estimate was chosen, we use it directly.
+            # If yin_estimate was chosen, we use it directly.
+            # If spectral_estimate was chosen, we use it directly.
+            # The combination logic is removed as per the instruction to prioritize.
 
             # ===== STAGE 3A: CONTINUITY CONSTRAINT =====
             stabilized_frequency = self._apply_frequency_continuity(stabilized_frequency, timestamp_ms)
 
             # ===== STAGE 3B: LOCAL FREQUENCY REFINEMENT =====
-            refined_frequency = self._refine_frequency_near_swara(
-                audio_frame, swara_result, stabilized_frequency
-            )
-            refined_result = self.swara_quantizer.to_swara_tonic_band(refined_frequency)
-            if refined_result is not None and refined_result.swara == swara_result.swara:
-                refined_result.confidence = max(refined_result.confidence, swara_result.confidence)
-                swara_result = refined_result
-                stabilized_frequency = refined_frequency
+            # Disabled to allow continuous frequency gliding ("aas" and "oos") 
+            # as requested by the user, rather than snapping to peaks.
+            # refined_frequency = self._refine_frequency_near_swara(
+            #     audio_frame, swara_result, stabilized_frequency
+            # )
+            # refined_result = self.swara_quantizer.to_swara_tonic_band(refined_frequency)
+            # if refined_result is not None and refined_result.swara == swara_result.swara:
+            #     refined_result.confidence = max(refined_result.confidence, swara_result.confidence)
+            #     swara_result = refined_result
+            #     stabilized_frequency = refined_frequency
 
             # ===== STAGE 3C: INSTANTANEOUS STABILITY ANCHOR =====
+            # Disabled hysteresis to allow fully responsive raw note changes
+            # swara_result = self._apply_swara_hysteresis(swara_result)
+            # stable, slope = self._is_stable_bidir_anchor(stabilized_frequency, timestamp_ms)
+            # swara_result = self._apply_min_duration_hold(swara_result, timestamp_ms, slope)
             is_stable_region, slope_st_per_sec = self._is_stable_bidir_anchor(
                 stabilized_frequency,
                 timestamp_ms,

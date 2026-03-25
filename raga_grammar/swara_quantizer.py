@@ -50,8 +50,8 @@ class SwaraQuantizer:
     NI3_SNAP_CONFIDENCE_MAX = 0.65
 
     # Supported live range relative to tonic:
-    # anumaandra Sa (Sa/2) to ati taara Sa (4*Sa)
-    MIN_OCTAVE_OFFSET = -1
+    # ati anumaandra Sa (Sa/4) to ati taara Sa (4*Sa)
+    MIN_OCTAVE_OFFSET = -2
     MAX_OCTAVE_OFFSET = 2
     
     def __init__(self, sa_frequency: float):
