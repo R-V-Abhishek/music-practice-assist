@@ -182,6 +182,17 @@
     const swaraCanvas = document.getElementById("swaraCanvas");
     const swaraCtx = swaraCanvas.getContext("2d");
 
+    function setupCanvas() {
+      const rect = swaraCanvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      swaraCanvas.width = rect.width * dpr;
+      swaraCanvas.height = rect.height * dpr;
+      swaraCtx.scale(dpr, dpr);
+    }
+    window.addEventListener('resize', setupCanvas);
+    // initial setup but we must ensure it's calculated after Layout
+    setTimeout(setupCanvas, 0);
+
     const STORAGE_KEY = "raga-practice-ui-state-v1";
 
     let ws = null;
@@ -300,9 +311,15 @@
     }
 
     function drawSwaraGraph() {
-      const w = swaraCanvas.width;
-      const h = swaraCanvas.height;
-      swaraCtx.clearRect(0, 0, w, h);
+      const rect = swaraCanvas.getBoundingClientRect();
+      const w = rect.width || swaraCanvas.width;
+      const h = rect.height || swaraCanvas.height;
+      
+      // Need to clear using physical pixels because of the scale transform
+      swaraCtx.save();
+      swaraCtx.setTransform(1, 0, 0, 1, 0, 0);
+      swaraCtx.clearRect(0, 0, swaraCanvas.width, swaraCanvas.height);
+      swaraCtx.restore();
 
       // Draw faint background lines for all notes in the range
       swaraCtx.lineWidth = 1;
@@ -376,7 +393,11 @@
         swaraCtx.strokeStyle = color;
         swaraCtx.beginPath();
         swaraCtx.moveTo(p1.x, p1.y);
-        swaraCtx.lineTo(p2.x, p2.y);
+        
+        // Flowy cubic bezier transition
+        const cpX = p1.x + (p2.x - p1.x) / 2;
+        swaraCtx.bezierCurveTo(cpX, p1.y, cpX, p2.y, p2.x, p2.y);
+        
         swaraCtx.stroke();
         
         lastValidPoint = p2;
