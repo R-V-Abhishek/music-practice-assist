@@ -41,7 +41,7 @@ class RealTimeGrammarPipeline:
     Real-time audio analysis pipeline for raga grammar validation.
     
     Pipeline stages:
-    1. Audio framing (2048 samples, hop=512, ~23ms at 22050 Hz)
+    1. Audio framing (2048 samples, hop=1024, ~46ms at 22050 Hz)
     2. Tonic Sa detection (Carnatic HPS ensemble)
     3. pYIN pitch tracking per frame
     4. Swara quantization using Sa reference
@@ -53,10 +53,10 @@ class RealTimeGrammarPipeline:
         raga_name: str,
         sr: int = 22050,
         frame_length: int = 2048,
-        hop_length: int = 512,
+        hop_length: int = 1024,
         pyin_frame_length: int = 1024,
         pyin_hop_length: int = 256,
-        min_frame_rms: float = 0.01,
+        min_frame_rms: float = 0.008,
     ):
         """
         Initialize pipeline for specific raga.
@@ -71,14 +71,14 @@ class RealTimeGrammarPipeline:
         self.raga_name = raga_name
         self.sr = sr
 
-        # Transition responsiveness tuning.
-        # Tuned to be highly responsive to match the old UI's speed
-        self._hysteresis_fast_switch_conf = 0.55
-        self._hysteresis_candidate_min_count = 1
-        self._hysteresis_candidate_switch_conf = 0.35
-        self._min_duration_hold_ms = 10.0
+        # Transition responsiveness/stability tuning.
+        # Balanced toward the documented behavior: fast but not flickery.
+        self._hysteresis_fast_switch_conf = 0.76
+        self._hysteresis_candidate_min_count = 2
+        self._hysteresis_candidate_switch_conf = 0.52
+        self._min_duration_hold_ms = 38.0
         self._min_duration_low_motion_st_per_sec = 10.0
-        self._min_duration_not_strong_conf = 0.85
+        self._min_duration_not_strong_conf = 0.78
         self._majority_hold_conf_max = 0.45
         self._hysteresis_log2_margin = 25.0 / 1200.0
         
