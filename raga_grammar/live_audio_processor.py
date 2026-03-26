@@ -253,7 +253,8 @@ class LiveAudioProcessor:
             ts_ms = (self._processed_samples / self.config.target_sr) * 1000.0
             result = self.pipeline.analyze_frame(frame, ts_ms)
 
-            if result is not None and result.voicing_prob >= self.config.min_voicing_prob:
+            # Pass any frame that has a valid tracked frequency (>0 Hz)
+            if result is not None and result.frequency_hz > 0:
                 events.append(self._frame_to_event(result))
                 events.extend(self._build_alert_events(result))
 

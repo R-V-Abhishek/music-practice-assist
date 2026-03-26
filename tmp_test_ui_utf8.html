@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -144,7 +144,7 @@
       <div class="kpi-grid">
         <div class="kpi"><div class="label">Status</div><div class="value" id="status">idle</div></div>
         <div class="kpi"><div class="label">Tonic Sa</div><div class="value" id="tonic">-</div></div>
-        <div class="kpi"><div class="label">Current Swara</div><div class="value"><span id="swara">-</span> <span id="deviation" style="color: var(--muted); font-size: 0.85em; font-weight: normal; margin-left: 6px;"></span></div></div>
+        <div class="kpi"><div class="label">Current Swara</div><div class="value" id="swara">-</div></div>
         <div class="kpi"><div class="label">Pitch</div><div class="value" id="pitch">-</div></div>
       </div>
     </div>
@@ -169,7 +169,6 @@
     const statusEl = document.getElementById("status");
     const tonicEl = document.getElementById("tonic");
     const swaraEl = document.getElementById("swara");
-    const deviationEl = document.getElementById("deviation");
     const pitchEl = document.getElementById("pitch");
     const alertsEl = document.getElementById("alerts");
     const swaraCanvas = document.getElementById("swaraCanvas");
@@ -198,7 +197,6 @@
       statusText: "idle",
       tonicText: "-",
       swaraText: "-",
-      deviationText: "",
       pitchText: "-",
       alertsText: "No alerts",
       alertsClass: "alerts",
@@ -265,7 +263,6 @@
       statusEl.textContent = appState.statusText;
       tonicEl.textContent = appState.tonicText;
       swaraEl.textContent = appState.swaraText;
-      deviationEl.textContent = appState.deviationText;
       pitchEl.textContent = appState.pitchText;
 
       alertsEl.textContent = appState.alertsText;
@@ -384,11 +381,8 @@
     }
 
     function handleServerEvents(payload) {
-      if (!payload) return;
-
-      // Only update status from top-level payload.stage if we aren't already running.
-      // This prevents the per-chunk "bootstrapping" label from overwriting the locked state.
-      if (payload.stage && appState.uiState !== 'running') {
+      if (!payload || !payload.events) return;
+      if (payload.stage) {
         setState({ statusText: payload.stage });
       }
       if (payload.tonic_hz) {
@@ -396,23 +390,15 @@
         setState({ tonicText });
       }
 
-      if (!payload.events) return;
-
       for (const event of payload.events) {
         if (event.type === 'frame_event') {
           if (event.swara) {
-            let devText = "";
-            if (event.cents_deviation !== undefined) {
-              const sign = event.cents_deviation > 0 ? '+' : '';
-              devText = `(${sign}${event.cents_deviation.toFixed(1)} cents)`;
-            }
-            setState({ swaraText: event.swara, deviationText: devText });
+            setState({ swaraText: event.swara });
           }
           setState({ pitchText: `${event.frequency_hz ?? '-'} Hz` });
 
           const graphSwaraIndex = resolveGraphSwaraIndex(event);
-          // Removed confidence >= 0.25 filter for zero-reluctance tracking
-          if (graphSwaraIndex !== null) {
+          if (graphSwaraIndex !== null && (event.swara_confidence ?? 0) >= 0.25) {
             if (lastGraphTs < 0 || (event.timestamp_ms - lastGraphTs) >= graphUpdateIntervalMs) {
               latestSwaraIndex = graphSwaraIndex;
               lastGraphTs = event.timestamp_ms;

@@ -1,0 +1,364 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Raga Practice</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background: #0f172a; color: #e2e8f0; }
+    .row { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; }
+    select, button { padding: 0.6rem; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; }
+    button { cursor: pointer; }
+    .card { background: #111827; border: 1px solid #334155; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; }
+    .alert { color: #fecaca; }
+    .ok { color: #86efac; }
+  </style>
+</head>
+<body>
+  <h2>Live Raga Practice Dashboard</h2>
+
+  <div class="row">
+    <label for="ragaSelect">Raga:</label>
+    <select id="ragaSelect"></select>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+
+  <div class="card">
+    <div>Status: <span id="status">idle</span></div>
+    <div>Tonic Sa: <span id="tonic">-</span></div>
+    <div>Current Swara: <span id="swara">-</span></div>
+    <div>Pitch: <span id="pitch">-</span></div>
+  </div>
+
+  <div class="card">
+    <strong>Alerts</strong>
+    <div id="alerts" class="alert">No alerts</div>
+  </div>
+
+  <div class="card">
+    <strong>Live Swara Graph</strong>
+    <canvas id="swaraCanvas" width="900" height="240" style="width:100%;background:#020617;border:1px solid #334155;border-radius:8px;"></canvas>
+  </div>
+
+  <script>
+    const ragaSelect = document.getElementById("ragaSelect");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusEl = document.getElementById("status");
+    const tonicEl = document.getElementById("tonic");
+    const swaraEl = document.getElementById("swara");
+    const pitchEl = document.getElementById("pitch");
+    const alertsEl = document.getElementById("alerts");
+    const swaraCanvas = document.getElementById("swaraCanvas");
+    const swaraCtx = swaraCanvas.getContext("2d");
+
+    let ws = null;
+    let audioContext = null;
+    let mediaStream = null;
+    let sourceNode = null;
+    let workletNode = null;
+    let sessionId = null;
+    let chunkId = 0;
+    const graphPoints = [];
+    const maxGraphPoints = 180;
+    const graphUpdateIntervalMs = 45;
+    let lastGraphTs = -1;
+    let lastSmoothIndex = null;
+    let latestSwaraIndex = null;
+    let currentSwaraIndex = null;
+    let lastGraphPushMs = 0;
+
+    const swaraLabels = ["Sa", "Ri1", "Ri2", "Ga1", "Ga2", "Ma1", "Ma2", "Pa", "Dha1", "Dha2", "Ni1", "Ni2"];
+
+    function drawSwaraGraph() {
+      const w = swaraCanvas.width;
+      const h = swaraCanvas.height;
+      swaraCtx.clearRect(0, 0, w, h);
+
+      swaraCtx.strokeStyle = "#1e293b";
+      swaraCtx.lineWidth = 1;
+      for (let i = 0; i < swaraLabels.length; i++) {
+        const y = h - (i / (swaraLabels.length - 1)) * h;
+        swaraCtx.beginPath();
+        swaraCtx.moveTo(0, y);
+        swaraCtx.lineTo(w, y);
+        swaraCtx.stroke();
+
+        swaraCtx.fillStyle = "#94a3b8";
+        swaraCtx.font = "11px Arial";
+        swaraCtx.fillText(swaraLabels[i], 6, y - 4);
+      }
+
+      if (graphPoints.length < 2) return;
+
+      swaraCtx.strokeStyle = "#22d3ee";
+      swaraCtx.lineWidth = 2;
+      swaraCtx.beginPath();
+
+      const points = graphPoints.map((p, i) => ({
+        x: (i / (maxGraphPoints - 1)) * w,
+        y: h - (p.swaraIndex / (swaraLabels.length - 1)) * h,
+      }));
+
+      swaraCtx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length - 1; i++) {
+        const midX = (points[i].x + points[i + 1].x) / 2;
+        const midY = (points[i].y + points[i + 1].y) / 2;
+        swaraCtx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
+      }
+      const last = points[points.length - 1];
+      swaraCtx.lineTo(last.x, last.y);
+      swaraCtx.stroke();
+
+      // draw current point marker
+      swaraCtx.fillStyle = "#67e8f9";
+      swaraCtx.beginPath();
+      swaraCtx.arc(last.x, last.y, 3, 0, Math.PI * 2);
+      swaraCtx.fill();
+    }
+
+    function animateGraph(nowMs) {
+      if (latestSwaraIndex !== null) {
+        if (currentSwaraIndex === null) {
+          currentSwaraIndex = latestSwaraIndex;
+        } else {
+          const followAlpha = 0.2;
+          currentSwaraIndex = (followAlpha * latestSwaraIndex) + ((1 - followAlpha) * currentSwaraIndex);
+        }
+
+        if ((nowMs - lastGraphPushMs) >= 30) {
+          graphPoints.push({ swaraIndex: currentSwaraIndex, t: nowMs });
+          if (graphPoints.length > maxGraphPoints) graphPoints.shift();
+          lastGraphPushMs = nowMs;
+        }
+      }
+
+      drawSwaraGraph();
+      window.requestAnimationFrame(animateGraph);
+    }
+
+    async function loadRagas() {
+      const res = await fetch('/ragas');
+      const ragas = await res.json();
+      ragas.forEach((r) => {
+        const o = document.createElement('option');
+        o.value = r;
+        o.textContent = r;
+        ragaSelect.appendChild(o);
+      });
+    }
+
+    function float32ToBase64(floatArray) {
+      const bytes = new Uint8Array(floatArray.buffer);
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return btoa(binary);
+    }
+
+    function handleServerEvents(payload) {
+      if (!payload || !payload.events) return;
+      statusEl.textContent = payload.stage || statusEl.textContent;
+      if (payload.tonic_hz) tonicEl.textContent = payload.tonic_hz.toFixed ? payload.tonic_hz.toFixed(2) + ' Hz' : payload.tonic_hz;
+
+      for (const event of payload.events) {
+        if (event.type === 'frame_event') {
+          if (event.swara) swaraEl.textContent = event.swara;
+          pitchEl.textContent = `${event.frequency_hz ?? '-'} Hz`;
+
+          if (Number.isInteger(event.swara_index) && event.swara_index >= 0 && (event.swara_confidence ?? 0) >= 0.25) {
+            if (lastGraphTs < 0 || (event.timestamp_ms - lastGraphTs) >= graphUpdateIntervalMs) {
+              const raw = event.swara_index;
+              if (lastSmoothIndex === null) {
+                lastSmoothIndex = raw;
+              } else {
+                // UI smoothing for stable harmonium/voice display
+                const alpha = 0.18;
+                lastSmoothIndex = (alpha * raw) + ((1 - alpha) * lastSmoothIndex);
+              }
+              latestSwaraIndex = lastSmoothIndex;
+              lastGraphTs = event.timestamp_ms;
+            }
+          }
+        }
+
+        if (event.type === 'alert_event' && event.state === 'active') {
+          alertsEl.textContent = `${event.message} | Suggestion: ${event.suggestion || '-'}`;
+          alertsEl.className = 'alert';
+        }
+
+        if (event.type === 'alert_event' && event.state === 'cleared') {
+          alertsEl.textContent = 'Forbidden-note alert cleared';
+          alertsEl.className = 'ok';
+        }
+
+        if (event.type === 'session_status' && event.stage === 'locked') {
+          statusEl.textContent = 'running';
+          tonicEl.textContent = `${event.tonic_hz} Hz`;
+        }
+      }
+    }
+
+    async function startSession() {
+      const raga = ragaSelect.value;
+      if (!raga) return;
+
+      const res = await fetch('/session/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ raga_name: raga, bootstrap_seconds: 1.5 })
+      });
+      const session = await res.json();
+      sessionId = session.session_id;
+
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${protocol}://${location.host}/ws/live/${sessionId}`);
+
+      ws.onmessage = (msg) => {
+        const payload = JSON.parse(msg.data);
+        handleServerEvents(payload);
+      };
+
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        alertsEl.textContent = 'WebSocket connection error';
+        alertsEl.className = 'alert';
+      };
+
+      ws.onclose = async () => {
+        console.log('WebSocket closed');
+        if (workletNode) workletNode.disconnect();
+        if (sourceNode) sourceNode.disconnect();
+        if (audioContext) await audioContext.close();
+        if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+      };
+
+      ws.onopen = async () => {
+        await setupAudioCapture();
+      };
+    }
+
+    async function setupAudioCapture() {
+      try {
+        console.log('Checking for getUserMedia...');
+
+        const fallbackGetUserMedia = () => {
+          const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+          if (!legacy) return null;
+          return (constraints) => new Promise((resolve, reject) => {
+            legacy.call(navigator, constraints, resolve, reject);
+          });
+        };
+
+        let getUserMediaFn = null;
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          getUserMediaFn = (constraints) => navigator.mediaDevices.getUserMedia(constraints);
+        } else {
+          getUserMediaFn = fallbackGetUserMedia();
+        }
+
+        if (!getUserMediaFn) {
+          throw new Error('Microphone API unavailable. Use HTTPS or localhost, and allow microphone permission.');
+        }
+
+        statusEl.textContent = 'bootstrapping';
+        console.log('Requesting microphone access...');
+        mediaStream = await getUserMediaFn({ audio: { echoCancellation: false } });
+        console.log('Got microphone stream:', mediaStream.getAudioTracks().length, 'audio tracks');
+        
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('AudioContext created, sampleRate:', audioContext.sampleRate);
+        
+        console.log('Loading audio worklet...');
+        await audioContext.audioWorklet.addModule('/static/audio-worklet.js');
+        console.log('Worklet module loaded');
+        
+        sourceNode = audioContext.createMediaStreamSource(mediaStream);
+        workletNode = new AudioWorkletNode(audioContext, 'chunk-capture-processor');
+        console.log('Worklet node created');
+
+        let chunkCount = 0;
+        workletNode.port.onmessage = (e) => {
+          chunkCount++;
+          if (chunkCount <= 3) {
+            console.log('Audio worklet firing, chunk #' + chunkCount);
+          }
+          if (!ws || ws.readyState !== WebSocket.OPEN) {
+            if (chunkCount === 1) console.warn('WebSocket not ready yet');
+            return;
+          }
+          const chunk = e.data;
+          ws.send(JSON.stringify({
+            type: 'audio_chunk',
+            chunk_id: chunkId++,
+            sample_rate: audioContext.sampleRate,
+            audio_b64: float32ToBase64(chunk)
+          }));
+        };
+
+        workletNode.port.onmessageerror = (e) => {
+          console.error('Worklet port error:', e);
+        };
+
+        sourceNode.connect(workletNode);
+        console.log('Audio stream connected to worklet');
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        graphPoints.length = 0;
+        lastGraphTs = -1;
+        lastSmoothIndex = null;
+        latestSwaraIndex = null;
+        currentSwaraIndex = null;
+        lastGraphPushMs = performance.now();
+        drawSwaraGraph();
+        console.log('Audio capture ready');
+      } catch (err) {
+        console.error('Error during audio setup:', err);
+        alertsEl.textContent = `Audio error: ${err.message}`;
+        alertsEl.className = 'alert';
+        statusEl.textContent = 'error';
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      }
+    }
+
+    async function stopSession() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'stop' }));
+        ws.close();
+      }
+
+      if (workletNode) workletNode.disconnect();
+      if (sourceNode) sourceNode.disconnect();
+      if (audioContext) await audioContext.close();
+      if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+
+      if (sessionId) {
+        const res = await fetch(`/session/${sessionId}/stop`, { method: 'POST' });
+        const summary = await res.json();
+        if (summary?.feedback?.performance_score !== undefined) {
+          alertsEl.textContent = `Session score: ${summary.feedback.performance_score.toFixed(1)}`;
+          alertsEl.className = 'ok';
+        }
+      }
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      statusEl.textContent = 'stopped';
+      sessionId = null;
+    }
+
+    startBtn.addEventListener('click', startSession);
+    stopBtn.addEventListener('click', stopSession);
+
+    loadRagas();
+    drawSwaraGraph();
+    window.requestAnimationFrame(animateGraph);
+  </script>
+</body>
+</html>
