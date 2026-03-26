@@ -67,11 +67,12 @@ class LiveAudioProcessor:
         self._consecutive_clean = 0
         self._forbidden_alert_active = False
         # Time-based forbidden note debounce (in ms)
+        # Time-based forbidden note debounce (in ms)
         self._forbidden_start_ms: Optional[float] = None
-        self._clean_start_ms: Optional[float] = None
-        # Trigger alert after 300ms of continuous forbidden note
+        self._forbidden_last_seen_ms: Optional[float] = None
+        # Trigger alert after 300ms of forbidden note (allowing brief interruptions)
         self._forbidden_trigger_ms: float = 300.0
-        # Clear alert after 200ms of consecutive clean frames
+        # Clear alert (and reset timers) after 200ms of NO forbidden notes
         self._forbidden_clear_ms: float = 200.0
 
     def _reconfigure_for_input_sr(self, input_sr: int) -> None:
@@ -175,32 +176,28 @@ class LiveAudioProcessor:
         ts = frame.timestamp_ms
 
         if validation is None or validation.error_type != ErrorType.FORBIDDEN_NOTE:
-            # Reset forbidden timer; start/continue clean timer
-            self._forbidden_start_ms = None
-            if self._clean_start_ms is None:
-                self._clean_start_ms = ts
+            # If we haven't seen a forbidden note for the clear duration, reset everything
+            if self._forbidden_last_seen_ms is not None and (ts - self._forbidden_last_seen_ms) >= self._forbidden_clear_ms:
+                self._forbidden_start_ms = None
+                self._forbidden_last_seen_ms = None
 
-            if (
-                self._forbidden_alert_active
-                and self._clean_start_ms is not None
-                and (ts - self._clean_start_ms) >= self._forbidden_clear_ms
-            ):
-                self._forbidden_alert_active = False
-                self._clean_start_ms = None
-                alerts.append(
-                    {
-                        "type": "alert_event",
-                        "alert": "forbidden_note",
-                        "state": "cleared",
-                        "timestamp_ms": round(ts, 2),
-                    }
-                )
+                if self._forbidden_alert_active:
+                    self._forbidden_alert_active = False
+                    alerts.append(
+                        {
+                            "type": "alert_event",
+                            "alert": "forbidden_note",
+                            "state": "cleared",
+                            "timestamp_ms": round(ts, 2),
+                        }
+                    )
             return alerts
 
-        # Forbidden note frame: reset clean timer; start/continue forbidden timer
-        self._clean_start_ms = None
+        # Forbidden note detected: start or continue tracking
         if self._forbidden_start_ms is None:
             self._forbidden_start_ms = ts
+        
+        self._forbidden_last_seen_ms = ts
 
         if (
             not self._forbidden_alert_active
