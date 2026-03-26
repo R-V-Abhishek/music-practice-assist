@@ -31,11 +31,13 @@ class LiveProcessorConfig:
     min_voicing_prob: float = 0.25
     forbidden_trigger_frames: int = 3
     forbidden_clear_frames: int = 3
-    frame_length: int = 768
-    hop_length: int = 128
-    pyin_frame_length: int = 512
-    pyin_hop_length: int = 128
-    min_frame_rms: float = 0.02
+    # Match the reference pipeline's stable analysis geometry:
+    # 2048-sample windows with 50% overlap.
+    frame_length: int = 2048
+    hop_length: int = 1024
+    pyin_frame_length: int = 1024
+    pyin_hop_length: int = 256
+    min_frame_rms: float = 0.008
     min_swara_confidence: float = 0.25
 
 
@@ -301,8 +303,16 @@ class LiveAudioProcessor:
             ts_ms = (self._processed_samples / self.config.target_sr) * 1000.0
             result = self.pipeline.analyze_frame(frame, ts_ms)
 
-            # Pass any frame that has a valid tracked frequency (>0 Hz)
-            if result is not None and result.frequency_hz > 0:
+            # Emit only when detection quality is sufficient.
+            if (
+                result is not None
+                and result.frequency_hz > 0
+                and result.voicing_prob >= self.config.min_voicing_prob
+                and (
+                    result.swara_result is None
+                    or result.swara_result.confidence >= self.config.min_swara_confidence
+                )
+            ):
                 events.append(self._frame_to_event(result))
                 events.extend(self._build_alert_events(result))
 
