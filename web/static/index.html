@@ -32,7 +32,7 @@
       padding: 1.5rem;
     }
 
-    .app { max-width: 980px; margin: 0 auto; }
+    .app { max-width: 1400px; margin: 0 auto; }
 
     .topbar {
       display: block;
@@ -112,11 +112,18 @@
     .alerts.ok { color: var(--good); border-color: rgba(134, 239, 172, 0.35); }
 
     canvas {
+      display: block;
       width: 100%;
+      height: 60vh;
+      min-height: 340px;
       background: var(--bg-0);
       border: 1px solid var(--line);
       border-radius: 10px;
       margin-top: 0.4rem;
+    }
+
+    .graph-card {
+      flex: 1 1 auto;
     }
 
     @media (max-width: 980px) {
@@ -150,9 +157,9 @@
     </div>
 
     <div class="stack">
-      <div class="card">
+      <div class="card graph-card">
         <h3 class="section-title">Live Swara Graph</h3>
-        <canvas id="swaraCanvas" width="1100" height="280"></canvas>
+        <canvas id="swaraCanvas" width="1400" height="700"></canvas>
       </div>
 
       <div class="card">
@@ -188,7 +195,7 @@
     const maxGraphPoints = 180;
     const graphUpdateIntervalMs = 45;
     let lastGraphTs = -1;
-    let latestSwaraIndex = null;
+    let latestSwaraData = null;
     let lastGraphPushMs = 0;
 
     const appState = {
@@ -222,11 +229,16 @@
       ["Ni2", 11], ["N2", 11], ["Ni3", 11], ["N3", 11],
     ]);
 
+    // Range for visualization: Mandra Pa (-5) to Taara Pa (+19)
+    // This gives ~10.5px height per note = visually substantial wave
+    const MIN_GRAPH_INDEX = -5;
+    const MAX_GRAPH_INDEX = 19;
+
     function yForSwaraIndex(index, canvasHeight) {
       const topPad = 12;
       const bottomPad = 14;
       const plotHeight = canvasHeight - topPad - bottomPad;
-      const t = Math.max(0, Math.min(1, index / (swaraLabels.length - 1)));
+      const t = Math.max(0, Math.min(1, (index - MIN_GRAPH_INDEX) / (MAX_GRAPH_INDEX - MIN_GRAPH_INDEX)));
       return (canvasHeight - bottomPad) - (t * plotHeight);
     }
 
@@ -278,14 +290,12 @@
     function resolveGraphSwaraIndex(event) {
       if (event.swara) {
         const normalized = String(event.swara).trim();
-        if (swaraToIndex.has(normalized)) return swaraToIndex.get(normalized);
+        if (swaraToIndex.has(normalized)) {
+          const baseIndex = swaraToIndex.get(normalized);
+          const octave = event.octave || 0;
+          return baseIndex + (octave * 12);
+        }
       }
-
-      if (Number.isFinite(event.swara_index)) {
-        const idx = Math.round(event.swara_index);
-        if (idx >= 0 && idx < swaraLabels.length) return idx;
-      }
-
       return null;
     }
 
@@ -294,55 +304,114 @@
       const h = swaraCanvas.height;
       swaraCtx.clearRect(0, 0, w, h);
 
-      swaraCtx.strokeStyle = "#1e293b";
+      // Draw faint background lines for all notes in the range
       swaraCtx.lineWidth = 1;
-      for (let i = 0; i < swaraLabels.length; i++) {
+      for (let i = MIN_GRAPH_INDEX; i <= MAX_GRAPH_INDEX; i++) {
         const y = yForSwaraIndex(i, h);
+        
+        // Emphasize Sa and Pa across octaves
+        const isSa = i % 12 === 0;
+        const isPa = (i - 7) % 12 === 0;
+        
+        if (isSa || isPa) {
+          swaraCtx.strokeStyle = "rgba(51, 65, 85, 0.6)"; 
+        } else {
+          swaraCtx.strokeStyle = "rgba(51, 65, 85, 0.2)";
+        }
+        
         swaraCtx.beginPath();
         swaraCtx.moveTo(0, y);
         swaraCtx.lineTo(w, y);
         swaraCtx.stroke();
 
         swaraCtx.fillStyle = "#94a3b8";
-        swaraCtx.font = "11px Arial";
-        swaraCtx.fillText(swaraLabels[i], 6, y - 4);
+        swaraCtx.font = "10px Arial";
+        let label = swaraLabels[(i % 12 + 12) % 12];
+        
+        // Clean labeling: tag octaves only for Sa and Pa, plus all notes in middle octave
+        if (isSa || isPa) {
+          if (i >= 12) label += " (+)";
+          if (i < 0) label += " (-)";
+          swaraCtx.fillText(label, 6, y - 4);
+        } else if (i > 0 && i < 12) {
+          swaraCtx.fillText(label, 6, y - 4);
+        }
       }
 
       if (graphPoints.length < 2) return;
 
-      swaraCtx.strokeStyle = "#22d3ee";
-      swaraCtx.lineWidth = 2;
-      swaraCtx.beginPath();
+      const points = graphPoints.map((p, i) => {
+        if (!p) return null;
+        return {
+          x: (i / (maxGraphPoints - 1)) * w,
+          y: yForSwaraIndex(p.swaraIndex, h),
+          centsDev: p.centsDev,
+          errorType: p.errorType
+        };
+      });
 
-      const points = graphPoints.map((p, i) => ({
-        x: (i / (maxGraphPoints - 1)) * w,
-        y: yForSwaraIndex(p.swaraIndex, h),
-      }));
+      // Draw color-coded line segments
+      swaraCtx.lineWidth = 2.5;
+      swaraCtx.lineCap = "round";
+      swaraCtx.lineJoin = "round";
 
-      swaraCtx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length - 1; i++) {
-        const midX = (points[i].x + points[i + 1].x) / 2;
-        const midY = (points[i].y + points[i + 1].y) / 2;
-        swaraCtx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
+      let lastValidPoint = null;
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+
+        if (!p1 || !p2) continue; // Skip gaps representing silence
+
+        // Determine color based on deviation and error state
+        let color = "#86efac"; // var(--good) - green
+        if (p2.errorType === "forbidden_note") {
+          color = "#fecaca"; // var(--bad) - red
+        } else if (Math.abs(p2.centsDev) > 40) {
+          color = "#fecaca"; // var(--bad) - red
+        } else if (Math.abs(p2.centsDev) > 15) {
+          color = "#fbbf24"; // var(--warn) - yellow
+        }
+
+        swaraCtx.strokeStyle = color;
+        swaraCtx.beginPath();
+        swaraCtx.moveTo(p1.x, p1.y);
+        swaraCtx.lineTo(p2.x, p2.y);
+        swaraCtx.stroke();
+        
+        lastValidPoint = p2;
       }
-      const last = points[points.length - 1];
-      swaraCtx.lineTo(last.x, last.y);
-      swaraCtx.stroke();
 
-      // draw current point marker
-      swaraCtx.fillStyle = "#67e8f9";
-      swaraCtx.beginPath();
-      swaraCtx.arc(last.x, last.y, 3, 0, Math.PI * 2);
-      swaraCtx.fill();
+      // draw current point marker if we have a valid ending
+      if (lastValidPoint) {
+        swaraCtx.fillStyle = swaraCtx.strokeStyle;
+        swaraCtx.beginPath();
+        swaraCtx.arc(lastValidPoint.x, lastValidPoint.y, 4, 0, Math.PI * 2);
+        swaraCtx.fill();
+      }
     }
 
     function animateGraph(nowMs) {
-      if (latestSwaraIndex !== null) {
-        if ((nowMs - lastGraphPushMs) >= 30) {
-          graphPoints.push({ swaraIndex: latestSwaraIndex, t: nowMs });
-          if (graphPoints.length > maxGraphPoints) graphPoints.shift();
-          lastGraphPushMs = nowMs;
+      if ((nowMs - lastGraphPushMs) >= 30) {
+        // Did we lose audio or pitch tracking for > 400ms?
+        if (lastGraphTs > 0 && (nowMs - lastGraphTs > 400)) {
+           latestSwaraData = null; // Vanish on extended silence
         }
+
+        if (latestSwaraData !== null) {
+          // Add microtonal deviation so the line is buttery smooth instead of jagged steps
+          const continuousIdx = latestSwaraData.idx + (latestSwaraData.dev / 100.0);
+          graphPoints.push({ 
+            swaraIndex: continuousIdx, 
+            centsDev: latestSwaraData.dev,
+            errorType: latestSwaraData.err 
+          });
+        } else {
+          graphPoints.push(null); // Keep pushing null to advance the scroll without drawing
+        }
+        
+        if (graphPoints.length > maxGraphPoints) graphPoints.shift();
+        lastGraphPushMs = nowMs;
       }
 
       drawSwaraGraph();
@@ -411,11 +480,16 @@
           setState({ pitchText: `${event.frequency_hz ?? '-'} Hz` });
 
           const graphSwaraIndex = resolveGraphSwaraIndex(event);
-          // Removed confidence >= 0.25 filter for zero-reluctance tracking
           if (graphSwaraIndex !== null) {
-            if (lastGraphTs < 0 || (event.timestamp_ms - lastGraphTs) >= graphUpdateIntervalMs) {
-              latestSwaraIndex = graphSwaraIndex;
-              lastGraphTs = event.timestamp_ms;
+            // Use date.now() equivalent for robust silence fallback comparison
+            const sysNowMs = performance.now();
+            if (lastGraphTs < 0 || (sysNowMs - lastGraphTs) >= graphUpdateIntervalMs) {
+              latestSwaraData = {
+                idx: graphSwaraIndex,
+                dev: event.cents_deviation || 0,
+                err: event.error_type
+              };
+              lastGraphTs = sysNowMs;
             }
           }
         }
@@ -583,7 +657,7 @@
         setState({ uiState: 'running' });
         graphPoints.length = 0;
         lastGraphTs = -1;
-        latestSwaraIndex = null;
+        latestSwaraData = null;
         lastGraphPushMs = performance.now();
         drawSwaraGraph();
         pushEvent('Audio capture ready');
