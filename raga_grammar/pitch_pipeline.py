@@ -111,7 +111,7 @@ class RealTimeGrammarPipeline:
         self._octave_error_accept_after: int = 4
 
         # MPM (McLeod Pitch Method) tuning
-        self._mpm_rms_threshold: float = 0.001
+        self._mpm_rms_threshold: float = 0.008
         self._mpm_key_threshold: float = 0.93
         self._mpm_min_hz: float = 50.0
         self._mpm_max_hz: float = 2000.0
