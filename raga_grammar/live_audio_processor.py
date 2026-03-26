@@ -70,10 +70,10 @@ class LiveAudioProcessor:
         # Time-based forbidden note debounce (in ms)
         self._forbidden_start_ms: Optional[float] = None
         self._forbidden_last_seen_ms: Optional[float] = None
-        # Trigger alert after 300ms of forbidden note (allowing brief interruptions)
-        self._forbidden_trigger_ms: float = 300.0
-        # Clear alert (and reset timers) after 200ms of NO forbidden notes
-        self._forbidden_clear_ms: float = 200.0
+        # Trigger alert after 750ms of forbidden note (allowing long glides to pass)
+        self._forbidden_trigger_ms: float = 750.0
+        # Clear alert (and reset timers) after 300ms of NO forbidden notes
+        self._forbidden_clear_ms: float = 300.0
 
     def _reconfigure_for_input_sr(self, input_sr: int) -> None:
         """Bind pipeline to mic sample rate and preserve time-window durations."""
