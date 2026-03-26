@@ -521,10 +521,22 @@
 
         setState({ statusText: 'bootstrapping' });
         console.log('Requesting microphone access...');
-        mediaStream = await getUserMediaFn({ audio: { echoCancellation: false } });
+        mediaStream = await getUserMediaFn({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+            sampleRate: { ideal: 22050 },
+            latency: { ideal: 0.01, max: 0.05 }
+          }
+        });
         console.log('Got microphone stream:', mediaStream.getAudioTracks().length, 'audio tracks');
         
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+          latencyHint: 'interactive',
+          sampleRate: 22050,
+        });
         console.log('AudioContext created, sampleRate:', audioContext.sampleRate);
         
         console.log('Loading audio worklet...');
@@ -532,7 +544,9 @@
         console.log('Worklet module loaded');
         
         sourceNode = audioContext.createMediaStreamSource(mediaStream);
-        workletNode = new AudioWorkletNode(audioContext, 'chunk-capture-processor');
+        workletNode = new AudioWorkletNode(audioContext, 'chunk-capture-processor', {
+          processorOptions: { bufferSize: 512 }
+        });
         console.log('Worklet node created');
 
         let chunkCount = 0;
@@ -543,6 +557,11 @@
           }
           if (!ws || ws.readyState !== WebSocket.OPEN) {
             if (chunkCount === 1) console.warn('WebSocket not ready yet');
+            return;
+          }
+          // Real-time guard: if transport is backpressured, drop oldest live chunk
+          // instead of building latency.
+          if (ws.bufferedAmount > 256 * 1024) {
             return;
           }
           const chunk = e.data;

@@ -1,8 +1,10 @@
 class ChunkCaptureProcessor extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
     this.buffer = [];
-    this.bufferSize = 1024;
+    const requested = options?.processorOptions?.bufferSize;
+    // Low-latency default: 512 samples (~10.7 ms @ 48 kHz)
+    this.bufferSize = Number.isFinite(requested) && requested >= 128 ? Math.floor(requested) : 512;
   }
 
   process(inputs) {

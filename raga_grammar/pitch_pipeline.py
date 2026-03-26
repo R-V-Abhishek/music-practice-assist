@@ -207,20 +207,32 @@ class RealTimeGrammarPipeline:
         import tempfile
         import soundfile as sf
 
-        fd, tmp_path = tempfile.mkstemp(suffix='.wav')
+        fd, tmp_path = tempfile.mkstemp(prefix='sa_detect_', suffix='.wav')
         os.close(fd)
 
         try:
             sf.write(tmp_path, y, self.sr)
             return self.detect_tonic_from_file(tmp_path)
         finally:
-            for _ in range(3):
+            # Temp input is cached by path in tonic detector; evict this key so
+            # repeated live sessions don't retain many stale temp entries.
+            self.tonic_detector.evict_audio_cache(tmp_path)
+
+            # Windows can hold short-lived read locks after decoder access.
+            # Retry unlink with small backoff to avoid noisy cleanup failures.
+            for attempt in range(12):
                 try:
-                    os.unlink(tmp_path)  # Clean up temp file
+                    os.unlink(tmp_path)
                     break
-                except PermissionError:
-                    # On Windows, readers may keep a short-lived file lock.
-                    time.sleep(0.05)
+                except FileNotFoundError:
+                    break
+                except (PermissionError, OSError):
+                    if attempt == 11:
+                        # Best-effort cleanup; avoid failing tonic detection path
+                        # because of transient OS file lock behavior.
+                        pass
+                    else:
+                        time.sleep(0.05 * (attempt + 1))
 
     def _apply_swara_hysteresis(self, swara_result: SwaraResult) -> SwaraResult:
         """

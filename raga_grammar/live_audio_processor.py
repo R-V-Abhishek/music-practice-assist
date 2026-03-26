@@ -26,6 +26,7 @@ from .swara_quantizer import get_swara_ordinal
 @dataclass
 class LiveProcessorConfig:
     target_sr: int = 22050
+    adapt_to_input_sr: bool = False
     bootstrap_seconds: float = 1.5
     min_voicing_prob: float = 0.25
     forbidden_trigger_frames: int = 3
@@ -77,6 +78,12 @@ class LiveAudioProcessor:
 
     def _reconfigure_for_input_sr(self, input_sr: int) -> None:
         """Bind pipeline to mic sample rate and preserve time-window durations."""
+        # Default behavior: keep a fixed DSP sample rate and resample input chunks.
+        # This avoids expensive frame growth (e.g., 48 kHz Bluetooth mics), which can
+        # increase end-to-end latency in heavy estimators.
+        if not self.config.adapt_to_input_sr:
+            return
+
         if input_sr <= 0 or input_sr == self.config.target_sr:
             return
 
@@ -176,6 +183,10 @@ class LiveAudioProcessor:
         ts = frame.timestamp_ms
 
         if validation is None or validation.error_type != ErrorType.FORBIDDEN_NOTE:
+            # Frame-count debounce path (used by tests and deterministic behavior)
+            self._consecutive_forbidden = 0
+            self._consecutive_clean += 1
+
             # If we haven't seen a forbidden note for the clear duration, reset everything
             if self._forbidden_last_seen_ms is not None and (ts - self._forbidden_last_seen_ms) >= self._forbidden_clear_ms:
                 self._forbidden_start_ms = None
@@ -183,6 +194,7 @@ class LiveAudioProcessor:
 
                 if self._forbidden_alert_active:
                     self._forbidden_alert_active = False
+                    self._consecutive_clean = 0
                     alerts.append(
                         {
                             "type": "alert_event",
@@ -191,19 +203,44 @@ class LiveAudioProcessor:
                             "timestamp_ms": round(ts, 2),
                         }
                     )
+
+            # Also clear based on configured clean-frame count.
+            if (
+                self._forbidden_alert_active
+                and self._consecutive_clean >= self.config.forbidden_clear_frames
+            ):
+                self._forbidden_alert_active = False
+                self._forbidden_start_ms = None
+                self._forbidden_last_seen_ms = None
+                self._consecutive_clean = 0
+                alerts.append(
+                    {
+                        "type": "alert_event",
+                        "alert": "forbidden_note",
+                        "state": "cleared",
+                        "timestamp_ms": round(ts, 2),
+                    }
+                )
             return alerts
 
         # Forbidden note detected: start or continue tracking
+        self._consecutive_clean = 0
+        self._consecutive_forbidden += 1
+
         if self._forbidden_start_ms is None:
             self._forbidden_start_ms = ts
         
         self._forbidden_last_seen_ms = ts
 
+        trigger_by_frames = self._consecutive_forbidden >= self.config.forbidden_trigger_frames
+        trigger_by_time = (ts - self._forbidden_start_ms) >= self._forbidden_trigger_ms
+
         if (
             not self._forbidden_alert_active
-            and (ts - self._forbidden_start_ms) >= self._forbidden_trigger_ms
+            and (trigger_by_frames or trigger_by_time)
         ):
             self._forbidden_alert_active = True
+            self._consecutive_forbidden = 0
             feedback = self.feedback.generate_feedback(validation, self.raga_name)
             alerts.append(
                 {

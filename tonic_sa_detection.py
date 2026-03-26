@@ -50,6 +50,13 @@ class TonicSaDetector:
             return y, sr
         except Exception as e:
             raise RuntimeError(f"Failed to load '{audio_path}': {e}")
+
+    def evict_audio_cache(self, audio_path: str | None = None) -> None:
+        """Evict cached audio to reduce memory pressure and stale temp-path entries."""
+        if audio_path is None:
+            self._audio_cache.clear()
+            return
+        self._audio_cache.pop(audio_path, None)
     
     def _get_median_spectrum(self, y, sr, n_fft=8192):
         """
