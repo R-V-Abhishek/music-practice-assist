@@ -80,6 +80,7 @@ class RealTimeGrammarPipeline:
         self._min_duration_low_motion_st_per_sec = 10.0
         self._min_duration_not_strong_conf = 0.85
         self._majority_hold_conf_max = 0.45
+        self._hysteresis_log2_margin = 25.0 / 1200.0
         
         # Verify raga exists
         if not get_raga_info(raga_name):
@@ -106,6 +107,8 @@ class RealTimeGrammarPipeline:
         self._last_output_change_ms: Optional[float] = None
         self._unvoiced_ms_accum: float = 0.0
         self._drift_counter: int = 0
+        self._octave_error_count: int = 0
+        self._octave_error_accept_after: int = 4
 
         # MPM (McLeod Pitch Method) tuning
         self._mpm_rms_threshold: float = 0.008
@@ -114,11 +117,11 @@ class RealTimeGrammarPipeline:
         self._mpm_max_hz: float = 2000.0
         self._mpm_pitch_history: deque[float] = deque(maxlen=3)
 
-        # Lightweight 1D Kalman smoothing (post-estimation)
-        self._kalman_freq_hz: Optional[float] = None
-        self._kalman_var: float = 1.0
-        self._kalman_q: float = 25.0
-        self._kalman_r: float = 120.0
+        # Adaptive 2-state Kalman smoothing [pitch_hz, velocity_hz_per_frame]
+        self._kalman_state: Optional[np.ndarray] = None
+        self._kalman_P: Optional[np.ndarray] = None
+        self._kalman_q_base: float = 0.9
+        self._kalman_r_base: float = 120.0
         
         # Initialize components
         self.tonic_detector = TonicSaDetector(sr=sr)
@@ -265,7 +268,6 @@ class RealTimeGrammarPipeline:
         # midpoint between the two swaras — switch immediately, no conf needed.
         stable_freq = self.swara_quantizer.get_swara_frequency(self._stable_swara, swara_result.octave)
         if stable_freq > 0:
-            import math
             new_note_freq = self.swara_quantizer.get_swara_frequency(swara_result.swara, swara_result.octave)
             # Re-derive raw freq: it's the new note's center offset by how many
             # cents the quantizer reported the deviation FROM the new note.
@@ -273,7 +275,24 @@ class RealTimeGrammarPipeline:
             raw_freq = new_note_freq * (2 ** (cents_dev / 1200.0)) if new_note_freq > 0 else 0.0
             if raw_freq > 0:
                 displacement_from_old = abs(1200.0 * math.log2(raw_freq / stable_freq))
+
+                # Hysteresis margin in log-frequency space: switch only when the
+                # new label is at least 25 cents closer than currently locked swara.
+                old_log = math.log2(stable_freq)
+                new_log = math.log2(new_note_freq) if new_note_freq > 0 else old_log
+                cur_log = math.log2(raw_freq)
+                old_dist = abs(cur_log - old_log)
+                new_dist = abs(cur_log - new_log)
+                significantly_closer = (old_dist - new_dist) >= self._hysteresis_log2_margin
+
                 if displacement_from_old >= 50.0:
+                    if not significantly_closer and swara_result.confidence < self._hysteresis_fast_switch_conf:
+                        held = self.swara_quantizer.to_swara_tonic_band(
+                            self.swara_quantizer.get_swara_frequency(self._stable_swara, swara_result.octave)
+                        )
+                        if held is not None:
+                            held.confidence = max(held.confidence * 0.85, swara_result.confidence * 0.70)
+                            return held
                     self._stable_swara = swara_result.swara
                     self._candidate_swara = None
                     self._candidate_count = 0
@@ -343,27 +362,77 @@ class RealTimeGrammarPipeline:
 
         return frequency_hz
 
-    def _apply_kalman_smoothing(self, frequency_hz: float) -> float:
-        """Apply lightweight scalar Kalman smoothing to pitch track."""
+    def _apply_kalman_smoothing(self, frequency_hz: float, confidence: float) -> float:
+        """Apply adaptive 2-state Kalman smoothing to pitch track."""
         if frequency_hz <= 0:
-            self._kalman_freq_hz = None
-            self._kalman_var = 1.0
+            self._kalman_state = None
+            self._kalman_P = None
             return frequency_hz
 
-        if self._kalman_freq_hz is None:
-            self._kalman_freq_hz = float(frequency_hz)
-            self._kalman_var = 1.0
+        if self._kalman_state is None or self._kalman_P is None:
+            self._kalman_state = np.array([float(frequency_hz), 0.0], dtype=np.float64)
+            self._kalman_P = np.array([[20.0, 0.0], [0.0, 40.0]], dtype=np.float64)
             return float(frequency_hz)
 
+        # Near-constant velocity model
+        F = np.array([[1.0, 1.0], [0.0, 1.0]], dtype=np.float64)
+        H = np.array([[1.0, 0.0]], dtype=np.float64)
+
+        # Gamaka-adaptive process noise scaling
+        pred_pitch = float(self._kalman_state[0])
+        q_scale = 3.0 if abs(float(frequency_hz) - pred_pitch) > 8.0 else 1.0
+        q = self._kalman_q_base * q_scale
+        Q = np.array([[q, 0.0], [0.0, q * 0.25]], dtype=np.float64)
+
+        # Confidence-aware measurement noise
+        r = self._kalman_r_base / max(0.1, float(confidence))
+        R = np.array([[r]], dtype=np.float64)
+
         # Predict
-        pred_f = self._kalman_freq_hz
-        pred_var = self._kalman_var + self._kalman_q
+        x_pred = F @ self._kalman_state
+        P_pred = F @ self._kalman_P @ F.T + Q
 
         # Update
-        k = pred_var / (pred_var + self._kalman_r)
-        self._kalman_freq_hz = float(pred_f + k * (frequency_hz - pred_f))
-        self._kalman_var = float((1.0 - k) * pred_var)
-        return self._kalman_freq_hz
+        z = np.array([[float(frequency_hz)]], dtype=np.float64)
+        y = z - (H @ x_pred).reshape(1, 1)
+        S = H @ P_pred @ H.T + R
+        K = P_pred @ H.T @ np.linalg.inv(S)
+        self._kalman_state = x_pred + (K @ y).reshape(2)
+        I = np.eye(2, dtype=np.float64)
+        self._kalman_P = (I - K @ H) @ P_pred
+        return float(self._kalman_state[0])
+
+    def _apply_octave_jump_guard(self, raw_frequency_hz: float) -> float:
+        """
+        Reject suspicious octave-like jumps unless sustained for several frames.
+        """
+        if raw_frequency_hz <= 0:
+            self._octave_error_count = 0
+            return raw_frequency_hz
+
+        if self._kalman_state is None:
+            self._octave_error_count = 0
+            return raw_frequency_hz
+
+        ref_pitch = float(self._kalman_state[0])
+        if ref_pitch <= 0:
+            self._octave_error_count = 0
+            return raw_frequency_hz
+
+        jump_log2 = abs(math.log2((raw_frequency_hz + 1e-9) / (ref_pitch + 1e-9)))
+        if jump_log2 > 0.6:
+            self._octave_error_count += 1
+            if self._octave_error_count > self._octave_error_accept_after:
+                # Accept sustained jump and reset filter around new pitch.
+                self._kalman_state = np.array([float(raw_frequency_hz), 0.0], dtype=np.float64)
+                self._kalman_P = np.array([[20.0, 0.0], [0.0, 40.0]], dtype=np.float64)
+                self._octave_error_count = 0
+                return raw_frequency_hz
+            # Temporary spike: keep previous stabilized reference.
+            return ref_pitch
+
+        self._octave_error_count = 0
+        return raw_frequency_hz
 
     def _commit_frequency_state(self, frequency_hz: float, timestamp_ms: float) -> None:
         """Commit frequency state after final per-frame decision."""
@@ -385,8 +454,9 @@ class RealTimeGrammarPipeline:
         self._last_output_swara = None
         self._last_output_change_ms = None
         self._drift_counter = 0
-        self._kalman_freq_hz = None
-        self._kalman_var = 1.0
+        self._kalman_state = None
+        self._kalman_P = None
+        self._octave_error_count = 0
 
     def _update_unvoiced_and_maybe_reset(self, timestamp_ms: float, voiced: bool) -> None:
         """
@@ -402,7 +472,7 @@ class RealTimeGrammarPipeline:
             return
 
         self._unvoiced_ms_accum += dt_ms
-        if self._unvoiced_ms_accum >= 120.0:
+        if self._unvoiced_ms_accum >= 300.0:
             self._soft_reset_tracking_state()
             self._unvoiced_ms_accum = 0.0
 
@@ -901,9 +971,12 @@ class RealTimeGrammarPipeline:
 
             mpm_estimate = self._estimate_swara_from_mpm(audio_frame)
             acpt_estimate = self._estimate_swara_from_acpt(audio_frame)
-            spectral_estimate = self._estimate_swara_from_spectrum(audio_frame)
+            spectral_estimate = None
             yin_estimate = None
-            # Keep YIN as expensive fallback only when both low-latency paths fail.
+            # Keep heavy estimators as fallbacks only when low-latency paths fail.
+            if mpm_estimate is None and acpt_estimate is None:
+                spectral_estimate = self._estimate_swara_from_spectrum(audio_frame)
+
             if mpm_estimate is None and acpt_estimate is None and spectral_estimate is None:
                 yin_estimate = self._estimate_swara_from_yin(audio_frame)
 
@@ -956,7 +1029,8 @@ class RealTimeGrammarPipeline:
 
             # ===== STAGE 3A: CONTINUITY CONSTRAINT =====
             stabilized_frequency = self._apply_frequency_continuity(stabilized_frequency, timestamp_ms)
-            stabilized_frequency = self._apply_kalman_smoothing(stabilized_frequency)
+            stabilized_frequency = self._apply_octave_jump_guard(stabilized_frequency)
+            stabilized_frequency = self._apply_kalman_smoothing(stabilized_frequency, confidence=voicing_prob)
 
             # ===== STAGE 3B: LOCAL FREQUENCY REFINEMENT =====
             # Disabled to allow continuous frequency gliding ("aas" and "oos") 
@@ -1185,8 +1259,9 @@ class RealTimeGrammarPipeline:
         self._unvoiced_ms_accum = 0.0
         self._drift_counter = 0
         self._mpm_pitch_history.clear()
-        self._kalman_freq_hz = None
-        self._kalman_var = 1.0
+        self._kalman_state = None
+        self._kalman_P = None
+        self._octave_error_count = 0
 
 class BatchAnalyzer:
     """Analyze multiple audio files for comparative validation studies"""
