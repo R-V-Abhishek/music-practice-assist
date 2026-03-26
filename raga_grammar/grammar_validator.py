@@ -325,12 +325,17 @@ class RagaGrammarValidator:
         return event
     
     def _check_forbidden_swara(self, swara: str, direction: Direction) -> Optional[ErrorType]:
-        """Check if swara is forbidden in current direction"""
+        """Check if swara is forbidden. Fires on explicit direction AND on neutral (lingering)."""
         if direction == Direction.ASCENDING and swara in self.raga_info.varja_arohana:
             return ErrorType.FORBIDDEN_NOTE
         elif direction == Direction.DESCENDING and swara in self.raga_info.varja_avarohana:
             return ErrorType.FORBIDDEN_NOTE
-        
+        elif direction in (Direction.NEUTRAL, Direction.UNKNOWN):
+            # When lingering on a note without clear motion, flag it if it's forbidden
+            # in EITHER direction — catching sustained forbidden notes.
+            if swara in self.raga_info.varja_arohana or swara in self.raga_info.varja_avarohana:
+                return ErrorType.FORBIDDEN_NOTE
+
         return None
     
     def get_validation_summary(self) -> Dict:

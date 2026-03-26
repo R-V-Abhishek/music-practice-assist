@@ -66,6 +66,13 @@ class LiveAudioProcessor:
         self._consecutive_forbidden = 0
         self._consecutive_clean = 0
         self._forbidden_alert_active = False
+        # Time-based forbidden note debounce (in ms)
+        self._forbidden_start_ms: Optional[float] = None
+        self._clean_start_ms: Optional[float] = None
+        # Trigger alert after 300ms of continuous forbidden note
+        self._forbidden_trigger_ms: float = 300.0
+        # Clear alert after 200ms of consecutive clean frames
+        self._forbidden_clear_ms: float = 200.0
 
     def _reconfigure_for_input_sr(self, input_sr: int) -> None:
         """Bind pipeline to mic sample rate and preserve time-window durations."""
@@ -165,32 +172,39 @@ class LiveAudioProcessor:
     def _build_alert_events(self, frame: FrameResult) -> List[Dict[str, Any]]:
         alerts: List[Dict[str, Any]] = []
         validation = frame.validation_event
+        ts = frame.timestamp_ms
 
         if validation is None or validation.error_type != ErrorType.FORBIDDEN_NOTE:
-            self._consecutive_forbidden = 0
-            self._consecutive_clean += 1
+            # Reset forbidden timer; start/continue clean timer
+            self._forbidden_start_ms = None
+            if self._clean_start_ms is None:
+                self._clean_start_ms = ts
 
             if (
                 self._forbidden_alert_active
-                and self._consecutive_clean >= self.config.forbidden_clear_frames
+                and self._clean_start_ms is not None
+                and (ts - self._clean_start_ms) >= self._forbidden_clear_ms
             ):
                 self._forbidden_alert_active = False
+                self._clean_start_ms = None
                 alerts.append(
                     {
                         "type": "alert_event",
                         "alert": "forbidden_note",
                         "state": "cleared",
-                        "timestamp_ms": round(frame.timestamp_ms, 2),
+                        "timestamp_ms": round(ts, 2),
                     }
                 )
             return alerts
 
-        self._consecutive_clean = 0
-        self._consecutive_forbidden += 1
+        # Forbidden note frame: reset clean timer; start/continue forbidden timer
+        self._clean_start_ms = None
+        if self._forbidden_start_ms is None:
+            self._forbidden_start_ms = ts
 
         if (
             not self._forbidden_alert_active
-            and self._consecutive_forbidden >= self.config.forbidden_trigger_frames
+            and (ts - self._forbidden_start_ms) >= self._forbidden_trigger_ms
         ):
             self._forbidden_alert_active = True
             feedback = self.feedback.generate_feedback(validation, self.raga_name)
@@ -199,7 +213,7 @@ class LiveAudioProcessor:
                     "type": "alert_event",
                     "alert": "forbidden_note",
                     "state": "active",
-                    "timestamp_ms": round(frame.timestamp_ms, 2),
+                    "timestamp_ms": round(ts, 2),
                     "swara": validation.swara,
                     "direction": validation.direction.value,
                     "message": feedback.get("message", validation.description),
