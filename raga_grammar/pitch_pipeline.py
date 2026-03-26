@@ -210,44 +210,63 @@ class RealTimeGrammarPipeline:
 
     def _apply_swara_hysteresis(self, swara_result: SwaraResult) -> SwaraResult:
         """
-        Apply temporal hysteresis to avoid jitter between neighboring swaras.
+        Frequency-displacement based note switching.
 
-        Switch rules:
-        - Same as stable note: accept immediately.
-        - Very high confidence: switch immediately.
-        - Otherwise require 2 consecutive frames before switching.
+        Switches to a new swara based on how far the raw pitch has moved away
+        from the current stable note's center in cents. This ensures that
+        sustained-vowel glides trigger note changes as soon as the pitch is
+        clearly in the new note's territory, regardless of per-frame confidence.
         """
         if self.swara_quantizer is None:
             return swara_result
 
-        # Initialize stable state
+        # Initialize stable state on first frame
         if self._stable_swara is None:
             self._stable_swara = swara_result.swara
             self._candidate_swara = None
             self._candidate_count = 0
             return swara_result
 
-        # No change needed
+        # No change needed — pitch is still on the stable swara
         if swara_result.swara == self._stable_swara:
             self._candidate_swara = None
             self._candidate_count = 0
             return swara_result
 
-        # Strong evidence: allow immediate switch
+        # ── PRIMARY GATE: Frequency-displacement based switching ──────────────
+        # Compute how far the ACPT raw frequency has moved from the OLD stable
+        # note center in cents. If >= 50 cents away, the pitch has crossed the
+        # midpoint between the two swaras — switch immediately, no conf needed.
+        stable_freq = self.swara_quantizer.get_swara_frequency(self._stable_swara, swara_result.octave)
+        if stable_freq > 0:
+            import math
+            new_note_freq = self.swara_quantizer.get_swara_frequency(swara_result.swara, swara_result.octave)
+            # Re-derive raw freq: it's the new note's center offset by how many
+            # cents the quantizer reported the deviation FROM the new note.
+            cents_dev = swara_result.cents_deviation if swara_result.cents_deviation is not None else 0.0
+            raw_freq = new_note_freq * (2 ** (cents_dev / 1200.0)) if new_note_freq > 0 else 0.0
+            if raw_freq > 0:
+                displacement_from_old = abs(1200.0 * math.log2(raw_freq / stable_freq))
+                if displacement_from_old >= 50.0:
+                    self._stable_swara = swara_result.swara
+                    self._candidate_swara = None
+                    self._candidate_count = 0
+                    return swara_result
+
+        # ── SECONDARY GATE: High-confidence instant switch ────────────────────
         if swara_result.confidence >= self._hysteresis_fast_switch_conf:
             self._stable_swara = swara_result.swara
             self._candidate_swara = None
             self._candidate_count = 0
             return swara_result
 
-        # Accumulate candidate evidence for switching
+        # Accumulate candidate evidence for the new note
         if self._candidate_swara == swara_result.swara:
             self._candidate_count += 1
         else:
             self._candidate_swara = swara_result.swara
             self._candidate_count = 1
 
-        # Switch only after repeated evidence
         if (
             self._candidate_count >= self._hysteresis_candidate_min_count
             and swara_result.confidence >= self._hysteresis_candidate_switch_conf
@@ -257,7 +276,7 @@ class RealTimeGrammarPipeline:
             self._candidate_count = 0
             return swara_result
 
-        # Hold previous stable swara for this frame
+        # Hold previous stable swara — pitch is ambiguous midway
         held = self.swara_quantizer.to_swara_tonic_band(
             self.swara_quantizer.get_swara_frequency(self._stable_swara, swara_result.octave)
         )
