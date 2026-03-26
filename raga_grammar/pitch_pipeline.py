@@ -10,6 +10,7 @@ Supports both real-time streaming (23ms per frame) and offline file analysis.
 import numpy as np
 import librosa
 import time
+import math
 from typing import List, Dict, Optional, Generator, Tuple
 from dataclasses import dataclass
 from collections import deque
@@ -105,6 +106,19 @@ class RealTimeGrammarPipeline:
         self._last_output_change_ms: Optional[float] = None
         self._unvoiced_ms_accum: float = 0.0
         self._drift_counter: int = 0
+
+        # MPM (McLeod Pitch Method) tuning
+        self._mpm_rms_threshold: float = 0.008
+        self._mpm_key_threshold: float = 0.93
+        self._mpm_min_hz: float = 50.0
+        self._mpm_max_hz: float = 2000.0
+        self._mpm_pitch_history: deque[float] = deque(maxlen=3)
+
+        # Lightweight 1D Kalman smoothing (post-estimation)
+        self._kalman_freq_hz: Optional[float] = None
+        self._kalman_var: float = 1.0
+        self._kalman_q: float = 25.0
+        self._kalman_r: float = 120.0
         
         # Initialize components
         self.tonic_detector = TonicSaDetector(sr=sr)
@@ -289,9 +303,55 @@ class RealTimeGrammarPipeline:
     def _apply_frequency_continuity(self, frequency_hz: float, timestamp_ms: float) -> float:
         """
         Apply continuity constraint to limit abrupt octave-like jumps.
-        Disabled for maximum snappiness.
+
+        Corrects sudden near-octave flips when they happen in a short time window.
         """
+        if (
+            frequency_hz <= 0
+            or self._last_frequency_hz is None
+            or self._last_timestamp_ms is None
+        ):
+            return frequency_hz
+
+        dt_ms = float(timestamp_ms - self._last_timestamp_ms)
+        if dt_ms <= 0 or dt_ms > 120.0:
+            return frequency_hz
+
+        jump_cents = 1200.0 * math.log2((frequency_hz + 1e-9) / (self._last_frequency_hz + 1e-9))
+        abs_jump = abs(jump_cents)
+
+        # Near-octave flips (roughly 2x / 0.5x) are corrected directly.
+        if 900.0 <= abs_jump <= 1500.0:
+            corrected = frequency_hz / 2.0 if jump_cents > 0 else frequency_hz * 2.0
+            return corrected
+
+        # Extreme outlier jumps are rejected.
+        if abs_jump > 1800.0:
+            return float(self._last_frequency_hz)
+
         return frequency_hz
+
+    def _apply_kalman_smoothing(self, frequency_hz: float) -> float:
+        """Apply lightweight scalar Kalman smoothing to pitch track."""
+        if frequency_hz <= 0:
+            self._kalman_freq_hz = None
+            self._kalman_var = 1.0
+            return frequency_hz
+
+        if self._kalman_freq_hz is None:
+            self._kalman_freq_hz = float(frequency_hz)
+            self._kalman_var = 1.0
+            return float(frequency_hz)
+
+        # Predict
+        pred_f = self._kalman_freq_hz
+        pred_var = self._kalman_var + self._kalman_q
+
+        # Update
+        k = pred_var / (pred_var + self._kalman_r)
+        self._kalman_freq_hz = float(pred_f + k * (frequency_hz - pred_f))
+        self._kalman_var = float((1.0 - k) * pred_var)
+        return self._kalman_freq_hz
 
     def _commit_frequency_state(self, frequency_hz: float, timestamp_ms: float) -> None:
         """Commit frequency state after final per-frame decision."""
@@ -302,6 +362,7 @@ class RealTimeGrammarPipeline:
     def _soft_reset_tracking_state(self) -> None:
         """Reset transient tracking state without touching tonic Sa lock."""
         self._f0_history.clear()
+        self._mpm_pitch_history.clear()
         self._swara_history.clear()
         self._stable_swara = None
         self._candidate_swara = None
@@ -312,6 +373,8 @@ class RealTimeGrammarPipeline:
         self._last_output_swara = None
         self._last_output_change_ms = None
         self._drift_counter = 0
+        self._kalman_freq_hz = None
+        self._kalman_var = 1.0
 
     def _update_unvoiced_and_maybe_reset(self, timestamp_ms: float, voiced: bool) -> None:
         """
@@ -580,6 +643,117 @@ class RealTimeGrammarPipeline:
 
         return swara_result, estimated_f, voicing_prob
 
+    def _estimate_swara_from_mpm(self, audio_frame: np.ndarray) -> Optional[Tuple[SwaraResult, float, float]]:
+        """
+        Estimate swara using McLeod Pitch Method (MPM) with NSDF.
+
+        Steps:
+        1) RMS gate
+        2) NSDF over lag range
+        3) Skip initial positive lobe
+        4) Collect positive local maxima
+        5) First-above-key-threshold selection
+        6) Parabolic lag refinement
+        7) Hz conversion + sanity guard
+        8) Short median smoothing (3 frames)
+        """
+        if self.swara_quantizer is None or self.sa_frequency is None:
+            return None
+
+        x = audio_frame.astype(np.float64, copy=False)
+        n = len(x)
+        if n < 256:
+            return None
+
+        # Step A: RMS gate
+        rms = float(np.sqrt(np.mean(x * x)))
+        if rms < self._mpm_rms_threshold:
+            return None
+
+        # Use configured frame length (2048 in offline path, smaller in low-latency path).
+        size = int(min(n, self.frame_length))
+        if size < 256:
+            return None
+
+        x = x[:size]
+        max_lag = size // 2
+        if max_lag < 3:
+            return None
+
+        # Step B: NSDF computation
+        nsdf = np.zeros(max_lag, dtype=np.float64)
+        for tau in range(max_lag):
+            x1 = x[: size - tau]
+            x2 = x[tau:size]
+            acf_tau = float(np.dot(x1, x2))
+            m_tau = float(np.dot(x1, x1) + np.dot(x2, x2))
+            nsdf[tau] = (2.0 * acf_tau / m_tau) if m_tau > 0.0 else 0.0
+
+        # Step C: ignore initial positive lobe
+        i = 1
+        while i < (max_lag - 1) and nsdf[i] > 0.0:
+            i += 1
+
+        # Step D: peak collection
+        peaks: List[Tuple[int, float]] = []
+        for k in range(max(i + 1, 1), max_lag - 1):
+            v = float(nsdf[k])
+            if v > 0.0 and v > nsdf[k - 1] and v >= nsdf[k + 1]:
+                peaks.append((k, v))
+
+        if not peaks:
+            return None
+
+        # Step E: key-threshold selection
+        max_peak = max(p[1] for p in peaks)
+        threshold = self._mpm_key_threshold * max_peak
+        selected_idx, selected_val = peaks[-1]
+        for p_idx, p_val in peaks:
+            if p_val >= threshold:
+                selected_idx, selected_val = p_idx, p_val
+                break
+
+        # Step F: parabolic interpolation
+        t0 = float(selected_idx)
+        if 0 < selected_idx < (max_lag - 1):
+            x1 = float(nsdf[selected_idx - 1])
+            x2 = float(nsdf[selected_idx])
+            x3 = float(nsdf[selected_idx + 1])
+            a = (x1 + x3 - 2.0 * x2) / 2.0
+            b = (x3 - x1) / 2.0
+            if abs(a) > 1e-12:
+                t0 = t0 - (b / (2.0 * a))
+
+        if t0 <= 0.0:
+            return None
+
+        # Step G/H: lag -> frequency + bounds
+        pitch_hz = float(self.sr / t0)
+        if pitch_hz < self._mpm_min_hz or pitch_hz > self._mpm_max_hz:
+            return None
+
+        # Additional tonic-focused support range guard
+        qmin_hz, qmax_hz = self.swara_quantizer.get_supported_frequency_range()
+        if pitch_hz < (qmin_hz * 0.92) or pitch_hz > (qmax_hz * 1.08):
+            return None
+
+        # Step I: short median post-filter
+        self._mpm_pitch_history.append(pitch_hz)
+        if len(self._mpm_pitch_history) == self._mpm_pitch_history.maxlen:
+            stabilized_frequency = float(np.median(np.array(self._mpm_pitch_history, dtype=np.float64)))
+        else:
+            stabilized_frequency = pitch_hz
+
+        swara_result = self.swara_quantizer.to_swara_tonic_band(stabilized_frequency)
+        if swara_result is None:
+            return None
+
+        voicing_prob = float(np.clip(selected_val, 0.0, 1.0))
+        swara_result.confidence = float(
+            np.clip(0.6 * swara_result.confidence + 0.4 * voicing_prob, 0.0, 1.0)
+        )
+        return swara_result, stabilized_frequency, voicing_prob
+
     def _estimate_swara_from_yin(self, audio_frame: np.ndarray) -> Optional[Tuple[SwaraResult, float, float]]:
         """Estimate swara using YIN pitch tracking in tonic-focused range."""
         if self.swara_quantizer is None or self.sa_frequency is None:
@@ -713,14 +887,15 @@ class RealTimeGrammarPipeline:
             if not self.sa_frequency:
                 return None
 
+            mpm_estimate = self._estimate_swara_from_mpm(audio_frame)
             acpt_estimate = self._estimate_swara_from_acpt(audio_frame)
             spectral_estimate = self._estimate_swara_from_spectrum(audio_frame)
             yin_estimate = None
             # Keep YIN as expensive fallback only when both low-latency paths fail.
-            if acpt_estimate is None and spectral_estimate is None:
+            if mpm_estimate is None and acpt_estimate is None and spectral_estimate is None:
                 yin_estimate = self._estimate_swara_from_yin(audio_frame)
 
-            if acpt_estimate is None and spectral_estimate is None and yin_estimate is None:
+            if mpm_estimate is None and acpt_estimate is None and spectral_estimate is None and yin_estimate is None:
                 # Bridge short glottal closures/unvoiced gaps by holding last stable pitch.
                 if (
                     self._last_frequency_hz is not None
@@ -749,7 +924,9 @@ class RealTimeGrammarPipeline:
                     validation_event=None
                 )
 
-            if acpt_estimate is not None:
+            if mpm_estimate is not None:
+                swara_result, stabilized_frequency, voicing_prob = mpm_estimate
+            elif acpt_estimate is not None:
                 swara_result, stabilized_frequency, voicing_prob = acpt_estimate
             elif yin_estimate is not None:
                 swara_result, stabilized_frequency, voicing_prob = yin_estimate
@@ -767,6 +944,7 @@ class RealTimeGrammarPipeline:
 
             # ===== STAGE 3A: CONTINUITY CONSTRAINT =====
             stabilized_frequency = self._apply_frequency_continuity(stabilized_frequency, timestamp_ms)
+            stabilized_frequency = self._apply_kalman_smoothing(stabilized_frequency)
 
             # ===== STAGE 3B: LOCAL FREQUENCY REFINEMENT =====
             # Disabled to allow continuous frequency gliding ("aas" and "oos") 
@@ -994,6 +1172,9 @@ class RealTimeGrammarPipeline:
         self._last_output_change_ms = None
         self._unvoiced_ms_accum = 0.0
         self._drift_counter = 0
+        self._mpm_pitch_history.clear()
+        self._kalman_freq_hz = None
+        self._kalman_var = 1.0
 
 class BatchAnalyzer:
     """Analyze multiple audio files for comparative validation studies"""
