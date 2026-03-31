@@ -107,7 +107,17 @@ _RAGA_DEFINITIONS = {
         "arohana": ["Sa", "Ga1", "Ri1", "Ga1", "Ma2", "Pa", "Dha1", "Ni3", "Sa"],
         "avarohana": ["Sa", "Ni3", "Dha1", "Pa", "Ma2", "Ga1", "Ri1", "Sa"],
         "parent_mela": 39,
-        "janya": True
+        "janya": True,
+        "special_phrases": [
+            ["Pa", "Dha1", "Ni3", "Dha1", "Pa", "Ma2"],
+            ["Pa", "Ma2", "Ga1", "Ri1"],
+            ["Ga1", "Ma2", "Pa", "Dha1", "Pa", "Ma2", "Ga1", "Ga1"],
+            ["Ri1", "Dha1", "Ni3", "Sa", "Ri1", "Sa", "Ni3", "Dha1", "Pa", "Ma2", "Ga1", "Ri1", "Ri1", "Sa", "Sa", "Ni3", "Ga1", "Ga1", "Ri1", "Ri1", "Sa"],
+            ["Ga1", "Pa", "Pa", "Ma2", "Ga1", "Ga1", "Ri1", "Ri1", "Sa"],
+            ["Ma2", "Pa", "Dha1", "Pa", "Dha1", "Ni3"],
+            ["Dha1", "Pa", "Ma2", "Ri1", "Ri1", "Sa", "Sa", "Ni3", "Dha1", "Ni3", "Dha1", "Pa", "Ma2", "Pa", "Ma2", "Pa", "Dha1", "Pa", "Dha1", "Pa", "Ma2", "Ga1", "Ga1", "Ri1", "Sa", "Ri1", "Ni3", "Sa", "Dha1", "Ni3", "Pa", "Dha1", "Ni3", "Sa", "Sa", "Pa", "Ma2", "Pa", "Dha1", "Ma2", "Dha1", "Pa"],
+            ["Pa", "Ma2", "Ga1", "Ri1", "Ri1", "Sa"]
+        ]
     },
 
     
@@ -116,10 +126,15 @@ _RAGA_DEFINITIONS = {
         "avarohana": ["Sa", "Ni2", "Dha2", "Pa", "Ma1", "Ga3", "Ri2", "Sa"], # Ni present in descent
         "parent_mela": 28,
         "janya": True,
-        "special_phrases": [["Sa", "Ni3", "Pa", "Dha2"]]
+        "special_phrases": [
+            ["Ma1", "Ga3", "Pa", "Dha2", "Sa", "Dha2", "Ri2", "Sa", "Ni3", "Dha2", "Pa", "Pa", "Pa", "Dha2", "Ma1", "Ga3", "Pa", "Dha2", "Pa", "Dha2", "Sa", "Ri2", "Ga3", "Ma1", "Ga3", "Sa", "Dha2", "Dha2", "Sa", "Sa", "Sa", "Ni2", "Ni2", "Dha2", "Dha2", "Pa"],
+            ["Pa", "Dha2", "Pa", "Dha2", "Sa", "Ri2", "Ga3", "Ma1", "Ga3", "Ri2", "Sa", "Dha2", "Dha2", "Sa", "Sa", "Sa"],
+            ["Ri2", "Ga3", "Ma1", "Sa", "Sa", "Pa", "Dha2", "Sa", "Ri2", "Ga3", "Sa", "Ni2", "Dha2", "Ma1", "Dha2", "Pa", "Ma1", "Ga3", "Ma1", "Ga3", "Ri2", "Sa", "Ri2", "Dha2", "Pa", "Ma1", "Ga3", "Sa"],
+            ["Sa", "Ri2", "Pa", "Ga3", "Ma1", "Ri2", "Ga3", "Sa", "Dha2", "Dha2", "Sa", "Sa", "Sa", "Sa", "Ni2", "Dha2", "Pa", "Dha2", "Dha2", "Ri2", "Dha2", "Sa"]
+        ]
     },
     
-    "Karaharapriya": {
+    "Kharaharapriya": {
         "arohana": ["Sa", "Ri2", "Ga2", "Ma1", "Pa", "Dha2", "Ni2", "Sa"],
         "avarohana": ["Sa", "Ni2", "Dha2", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
         "parent_mela": 22,
@@ -128,10 +143,23 @@ _RAGA_DEFINITIONS = {
     
     "Ānandabhairavi": {
         "arohana": ["Sa", "Ga2", "Ri2", "Ga2", "Ma1", "Pa", "Dha2", "Pa", "Sa"],
-        "avarohana": ["Sa", "Ni2", "Dha1", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
+        "avarohana": ["Sa", "Ni2", "Dha2", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
         "parent_mela": 20,
         "janya": True,
-        "special_phrases": [["Pa", "Ma1", "Ga3", "Ga3", "Ma1"], ["Pa", "Dha1", "Pa"], ["Pa", "Dha1","Ma1", "Pa"]]
+        "special_phrases": [
+            # Frequent phrases
+            ["Pa", "Dha2", "Ni2", "Dha2", "Ni2", "Pa"],
+            # With rare Suddha Dhaivata (D1)
+            ["Pa", "Dha1", "Ma1", "Pa", "Ga2", "Ri2"],
+            ["Ga2", "Ma1", "Dha1", "Pa", "Ma1", "Ga2", "Ri2"],
+            ["Ga2", "Ma1", "Pa", "Dha1", "Dha1", "Ma1", "Pa", "Ga2", "Ri2"],
+            # With anya swaras
+            ["Pa", "Ma1", "Ga3", "Ga3", "Ma1"],
+            ["Ma1", "Ga2", "Ri2", "Ga3", "Ma1", "Pa", "Ma1", "Ma1"],,
+            # Gamaka-rich phrases,
+            ["Sa", "Ga2", "Ri2", "Ni2"],
+            ["Pa", "Ma1", "Pa", "Sa", "Ni2"]        
+        ]
     },
     
     "Bilahari": {
@@ -139,7 +167,7 @@ _RAGA_DEFINITIONS = {
         "avarohana": ["Sa", "Ni3", "Dha2", "Pa", "Ma1", "Ga3", "Ri2", "Sa"],
         "parent_mela": 29,
         "janya": True,
-        "special_phrases": [["Da2", "Ni2", "Pa"]]
+        "special_phrases": [["Pa", "Dha2", "Ni2", "Pa", "Dha2", "Pa"]]
     },
     
     "Kānaḍa": {
@@ -161,14 +189,14 @@ _RAGA_DEFINITIONS = {
         "avarohana": ["Sa", "Ni2", "Dha2", "Pa", "Ma1", "Ga3", "Ri2", "Sa"],
         "parent_mela": 28,
         "janya": True,
-        "special_phrases": [["Sa", "Ni3", "Da2"]]
+        "special_phrases": [["Sa", "Ni3", "Da2", "Ni2"]]
     },
     
     "Tōḍi": {
         "arohana": ["Sa", "Ri1", "Ga2", "Ma1", "Pa", "Dha1", "Ni2", "Sa"],
         "avarohana": ["Sa", "Ni2", "Dha1", "Pa", "Ma1", "Ga2", "Ri1", "Sa"],
         "parent_mela": 8,
-        "janya": False  # This IS the 8th Melakarta
+        "janya": False
     },
     
     "Mukhāri": {
@@ -183,7 +211,8 @@ _RAGA_DEFINITIONS = {
         "arohana": ["Sa", "Ri2", "Ma1", "Pa", "Ni2", "Dha2", "Ni2", "Sa"],
         "avarohana": ["Sa", "Ni2", "Dha2", "Pa", "Ma1","Ga3", "Pa", "Ma1", "Ri2", "Sa"],
         "parent_mela": 28,
-        "janya": True
+        "janya": True,
+        "special_phrases": [["Ma1", "Ga3", "Pa", "Ma1", "Ni2", "Dha2", "Ma1"]]
     },
     
     "Kāpi": {
@@ -233,7 +262,7 @@ _RAGA_DEFINITIONS = {
     
     "Gauḷa": {
         "arohana": ["Sa", "Ri1", "Ma1", "Pa", "Ni3", "Sa"],  # Dha varja
-        "avarohana": ["Sa", "Ni3", "Pa", "Ma1", "Ri1", "Ga3", "Ri1", "Sa"],
+        "avarohana": ["Sa", "Ni3", "Pa", "Ma1", "Ri1", "Ga3", "Ma1", "Ri1", "Sa"],
         "parent_mela": 15,
         "janya": True
     },
