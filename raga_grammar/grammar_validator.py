@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 import time
 
-from .raga_database import RagaInfo, get_raga_info
+from .raga_database import RagaInfo, get_raga_info, SWARA_CENTS
 from .swara_quantizer import SwaraResult, get_swara_ordinal
 
 class ErrorType(Enum):
@@ -90,161 +90,73 @@ class DirectionDetector:
         self.history.clear()
 
 class RagaGrammarFSM:
-    """Finite State Machine for raga sequence validation"""
+    """Stateless per-step membership validator for raga swaras.
+    
+    Pure function of (swara, direction) → valid?  No position pointers.
+    Handles vakra ragas naturally via set membership; phrase-level vakra
+    constraints are deferred to Phase 3 forbidden-phrase detection.
+    """
     
     def __init__(self, raga_info: RagaInfo):
         self.raga_info = raga_info
-        self.reset()
+        # Pre-compute membership sets for O(1) lookup
+        self.arohana_set: Set[str] = set(raga_info.arohana)
+        self.avarohana_set: Set[str] = set(raga_info.avarohana)
     
     def reset(self):
-        """Reset FSM to initial state"""
-        self.current_direction = Direction.UNKNOWN
-        self.arohana_position = 0
-        self.avarohana_position = 0
-        self.last_swara = None
+        """No-op — FSM is stateless. Kept for API compatibility."""
+        pass
     
     def validate_sequence(self, swara: str, direction: Direction) -> Optional[ErrorType]:
-        """
-        Validate if swara follows correct Arohana/Avarohana sequence.
+        """Validate swara membership for the given step direction.
+        
+        ASCENDING  → forbidden if swara in varja_arohana
+        DESCENDING → forbidden if swara in varja_avarohana
+        NEUTRAL    → must appear in arohana OR avarohana set
+        UNKNOWN    → always pass (very first note)
         
         Args:
-            swara: Current swara
-            direction: Detected motion direction
+            swara: Current swara name
+            direction: Octave-aware pairwise direction for this step
             
         Returns:
-            ErrorType if violation detected, None if valid
+            ErrorType.FORBIDDEN_NOTE on violation, None if valid
         """
-        # Handle direction changes
-        if direction != self.current_direction:
-            self._handle_direction_change(direction)
+        if direction == Direction.UNKNOWN:
+            return None
         
-        # Choose appropriate sequence based on direction
         if direction == Direction.ASCENDING:
-            return self._validate_arohana_step(swara)
-        elif direction == Direction.DESCENDING:
-            return self._validate_avarohana_step(swara)
-        else:
-            # Neutral/unknown direction - allow any note in either sequence
-            arohana_valid = self._is_swara_in_sequence(swara, self.raga_info.arohana)
-            avarohana_valid = self._is_swara_in_sequence(swara, self.raga_info.avarohana)
-            
-            if not (arohana_valid or avarohana_valid):
-                return ErrorType.SEQUENCE_VIOLATION
+            if swara in self.raga_info.varja_arohana:
+                return ErrorType.FORBIDDEN_NOTE
+            return None
         
-        self.last_swara = swara
+        if direction == Direction.DESCENDING:
+            if swara in self.raga_info.varja_avarohana:
+                return ErrorType.FORBIDDEN_NOTE
+            return None
+        
+        # NEUTRAL — swara must belong to at least one direction's set
+        if swara not in self.arohana_set and swara not in self.avarohana_set:
+            return ErrorType.FORBIDDEN_NOTE
+        
         return None
     
-    def _handle_direction_change(self, new_direction: Direction):
-        """Handle direction change - reset appropriate FSM state"""
-        self.current_direction = new_direction
-        
-        if new_direction == Direction.ASCENDING:
-            # Reset to beginning of arohana, or find current position
-            self._find_arohana_position(self.last_swara)
-        elif new_direction == Direction.DESCENDING:
-            # Reset to beginning of avarohana, or find current position
-            self._find_avarohana_position(self.last_swara)
-    
-    def _validate_arohana_step(self, swara: str) -> Optional[ErrorType]:
-        """Validate step in ascending direction"""
-        arohana = self.raga_info.arohana
-        
-        # Find where we should be in the sequence
-        expected_positions = []
-        for i in range(self.arohana_position, len(arohana)):
-            if arohana[i] == swara:
-                expected_positions.append(i)
-        
-        if not expected_positions:
-            # Swara not found in remaining arohana
-            return ErrorType.SEQUENCE_VIOLATION
-        
-        # Allow forward motion (elision is OK in Carnatic music)
-        new_position = min(expected_positions)
-        if new_position >= self.arohana_position:
-            self.arohana_position = new_position + 1
-            return None
-        else:
-            # Backward motion in ascending direction
-            return ErrorType.WRONG_DIRECTION
-    
-    def _validate_avarohana_step(self, swara: str) -> Optional[ErrorType]:
-        """Validate step in descending direction"""
-        avarohana = self.raga_info.avarohana
-        
-        # Find where we should be in the sequence
-        expected_positions = []
-        for i in range(self.avarohana_position, len(avarohana)):
-            if avarohana[i] == swara:
-                expected_positions.append(i)
-        
-        if not expected_positions:
-            return ErrorType.SEQUENCE_VIOLATION
-        
-        # Allow forward motion in avarohana sequence
-        new_position = min(expected_positions)
-        if new_position >= self.avarohana_position:
-            self.avarohana_position = new_position + 1
-            return None
-        else:
-            return ErrorType.WRONG_DIRECTION
-    
-    def _find_arohana_position(self, swara: Optional[str]):
-        """Find current position in arohana sequence"""
-        if swara is None:
-            self.arohana_position = 0
-            return
-        
-        # Find the earliest occurrence of this swara
-        for i, seq_swara in enumerate(self.raga_info.arohana):
-            if seq_swara == swara:
-                self.arohana_position = i + 1
-                return
-        
-        self.arohana_position = 0
-    
-    def _find_avarohana_position(self, swara: Optional[str]):
-        """Find current position in avarohana sequence"""
-        if swara is None:
-            self.avarohana_position = 0
-            return
-        
-        for i, seq_swara in enumerate(self.raga_info.avarohana):
-            if seq_swara == swara:
-                self.avarohana_position = i + 1
-                return
-        
-        self.avarohana_position = 0
-    
-    def _is_swara_in_sequence(self, swara: str, sequence: List[str]) -> bool:
-        """Check if swara appears anywhere in the sequence"""
-        return swara in sequence
-    
     def get_expected_swaras(self, direction: Direction) -> List[str]:
-        """Get list of expected next swaras for current FSM state"""
+        """Get list of allowed swaras for the given direction."""
         if direction == Direction.ASCENDING:
-            sequence = self.raga_info.arohana
-            position = self.arohana_position
+            return list(self.arohana_set)
         elif direction == Direction.DESCENDING:
-            sequence = self.raga_info.avarohana
-            position = self.avarohana_position
+            return list(self.avarohana_set)
         else:
-            # Return all allowed swaras for neutral direction
-            return list(set(self.raga_info.arohana + self.raga_info.avarohana))
-        
-        if position < len(sequence):
-            return [sequence[position]]
-        else:
-            return []  # End of sequence reached
+            return list(self.arohana_set | self.avarohana_set)
 
 class RagaGrammarValidator:
     """
     Main raga grammar validation engine.
     
-    Implements layered validation:
-    1. Forbidden swara detection (immediate) 
-    2. Sequence order validation (FSM)
-    3. Direction-sensitive rule checking
+    Single-layer validation via stateless per-step membership FSM.
+    Direction is computed octave-aware from consecutive SwaraResults.
+    DirectionDetector is retained for UI display direction only.
     """
     
     def __init__(self, raga_name: str):
@@ -262,12 +174,49 @@ class RagaGrammarValidator:
             raise ValueError(f"Raga '{raga_name}' not found in database")
         
         self.raga_name = raga_name
-        self.direction_detector = DirectionDetector()
+        self.direction_detector = DirectionDetector()  # UI display direction only
         self.fsm = RagaGrammarFSM(self.raga_info)
+        
+        # Octave-aware pairwise direction tracking for validation
+        self._prev_swara_result: Optional[SwaraResult] = None
         
         # Validation history
         self.events: List[ValidationEvent] = []
         self.start_time = time.time()
+    
+    def _get_step_direction(self, prev: Optional[SwaraResult], curr: SwaraResult) -> Direction:
+        """
+        Octave-aware pairwise direction between two consecutive SwaraResults.
+        
+        Converts each swara to an absolute pitch position using:
+            pitch_pos = octave * 1200 + SWARA_CENTS[swara]
+        and compares to determine melodic direction.
+        
+        Args:
+            prev: Previous SwaraResult (None at start of session)
+            curr: Current SwaraResult
+            
+        Returns:
+            Direction.ASCENDING / DESCENDING / NEUTRAL / UNKNOWN
+        """
+        if prev is None:
+            return Direction.UNKNOWN
+        
+        prev_cents = SWARA_CENTS.get(prev.swara)
+        curr_cents = SWARA_CENTS.get(curr.swara)
+        
+        if prev_cents is None or curr_cents is None:
+            return Direction.UNKNOWN
+        
+        prev_pos = prev.octave * 1200 + prev_cents
+        curr_pos = curr.octave * 1200 + curr_cents
+        
+        if curr_pos > prev_pos:
+            return Direction.ASCENDING
+        elif curr_pos < prev_pos:
+            return Direction.DESCENDING
+        else:
+            return Direction.NEUTRAL
     
     def validate_swara(self, swara_result: SwaraResult, 
                       timestamp_ms: Optional[float] = None) -> ValidationEvent:
@@ -285,58 +234,36 @@ class RagaGrammarValidator:
             timestamp_ms = (time.time() - self.start_time) * 1000
         
         swara = swara_result.swara
-        direction = self.direction_detector.add_swara(swara)
         
-        # Layer 1: Immediate forbidden swara check
-        forbidden_error = self._check_forbidden_swara(swara, direction)
-        if forbidden_error:
-            event = ValidationEvent(
-                timestamp_ms=timestamp_ms,
-                swara=swara,
-                octave=swara_result.octave,
-                frequency_hz=0,  # Will be filled by caller
-                cents_deviation=swara_result.cents_deviation,
-                error_type=forbidden_error,
-                direction=direction,
-                description=f"Forbidden note {swara} in {direction.value} for {self.raga_name}",
-                confidence=swara_result.confidence
-            )
-            self.events.append(event)
-            return event
+        # UI display direction (phrase-level, from DirectionDetector)
+        ui_direction = self.direction_detector.add_swara(swara)
         
-        # Layer 2: Sequence validation via FSM
-        sequence_error = self.fsm.validate_sequence(swara, direction)
-        expected_swaras = self.fsm.get_expected_swaras(direction)
+        # Octave-aware pairwise direction for validation decisions
+        validation_direction = self._get_step_direction(self._prev_swara_result, swara_result)
+        
+        # Unified membership validation (forbidden-note + direction check in one step)
+        error = self.fsm.validate_sequence(swara, validation_direction)
+        expected_swaras = self.fsm.get_expected_swaras(validation_direction)
         
         event = ValidationEvent(
             timestamp_ms=timestamp_ms,
             swara=swara,
             octave=swara_result.octave,
-            frequency_hz=0,
+            frequency_hz=0,  # Will be filled by caller
             cents_deviation=swara_result.cents_deviation,
-            error_type=sequence_error,
-            direction=direction,
+            error_type=error,
+            direction=ui_direction,
             expected_swara=expected_swaras[0] if expected_swaras else None,
-            description="Valid swara" if not sequence_error else f"Sequence violation: {sequence_error.value}",
+            description=(
+                "Valid swara" if not error
+                else f"Forbidden note {swara} in {validation_direction.value} for {self.raga_name}"
+            ),
             confidence=swara_result.confidence
         )
         
         self.events.append(event)
+        self._prev_swara_result = swara_result
         return event
-    
-    def _check_forbidden_swara(self, swara: str, direction: Direction) -> Optional[ErrorType]:
-        """Check if swara is forbidden. Fires on explicit direction AND on neutral (lingering)."""
-        if direction == Direction.ASCENDING and swara in self.raga_info.varja_arohana:
-            return ErrorType.FORBIDDEN_NOTE
-        elif direction == Direction.DESCENDING and swara in self.raga_info.varja_avarohana:
-            return ErrorType.FORBIDDEN_NOTE
-        elif direction in (Direction.NEUTRAL, Direction.UNKNOWN):
-            # When lingering on a note without clear motion, flag it if it's forbidden
-            # in EITHER direction — catching sustained forbidden notes.
-            if swara in self.raga_info.varja_arohana or swara in self.raga_info.varja_avarohana:
-                return ErrorType.FORBIDDEN_NOTE
-
-        return None
     
     def get_validation_summary(self) -> Dict:
         """Get summary of all validation events"""
@@ -361,6 +288,7 @@ class RagaGrammarValidator:
         """Reset validator state for new analysis"""
         self.direction_detector.reset()
         self.fsm.reset()
+        self._prev_swara_result = None
         self.events.clear()
         self.start_time = time.time()
     

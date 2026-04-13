@@ -155,8 +155,8 @@ _RAGA_DEFINITIONS = {
             ["Ga2", "Ma1", "Pa", "Dha1", "Dha1", "Ma1", "Pa", "Ga2", "Ri2"],
             # With anya swaras
             ["Pa", "Ma1", "Ga3", "Ga3", "Ma1"],
-            ["Ma1", "Ga2", "Ri2", "Ga3", "Ma1", "Pa", "Ma1", "Ma1"],,
-            # Gamaka-rich phrases,
+            ["Ma1", "Ga2", "Ri2", "Ga3", "Ma1", "Pa", "Ma1", "Ma1"],
+            # Gamaka-rich phrases
             ["Sa", "Ga2", "Ri2", "Ni2"],
             ["Pa", "Ma1", "Pa", "Sa", "Ni2"]        
         ]

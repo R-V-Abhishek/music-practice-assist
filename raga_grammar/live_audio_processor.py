@@ -37,7 +37,7 @@ class LiveProcessorConfig:
     hop_length: int = 1024
     pyin_frame_length: int = 1024
     pyin_hop_length: int = 256
-    min_frame_rms: float = 0.008
+    min_frame_rms: float = 0.02
     min_swara_confidence: float = 0.25
 
 
