@@ -17,6 +17,7 @@
       --good: #86efac;
       --warn: #fbbf24;
       --bad: #fecaca;
+      --orange: #fb923c;
     }
 
     * { box-sizing: border-box; }
@@ -52,7 +53,7 @@
 
     .controls {
       display: grid;
-      grid-template-columns: 1.2fr auto auto;
+      grid-template-columns: 1.2fr auto auto auto;
       gap: 0.75rem;
       align-items: center;
       margin-bottom: 1rem;
@@ -98,7 +99,8 @@
       text-transform: uppercase;
     }
 
-    .alerts {
+    /* Group 2: Rich alert panel */
+    .alert-panel {
       min-height: 56px;
       padding: 0.6rem 0.7rem;
       border-radius: 10px;
@@ -107,9 +109,137 @@
       color: var(--muted);
       font-size: 0.92rem;
       line-height: 1.45;
+      position: relative;
+      overflow: hidden;
     }
-    .alerts.alert { color: var(--bad); border-color: rgba(254, 202, 202, 0.35); }
-    .alerts.ok { color: var(--good); border-color: rgba(134, 239, 172, 0.35); }
+    .alert-panel.severity-forbidden_note { color: var(--bad); border-color: rgba(254, 202, 202, 0.35); }
+    .alert-panel.severity-forbidden_phrase { color: var(--orange); border-color: rgba(251, 146, 60, 0.35); }
+    .alert-panel.severity-gamaka_missing { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); }
+    .alert-panel.severity-cleared { color: var(--good); border-color: rgba(134, 239, 172, 0.35); }
+    .alert-panel .alert-title { font-weight: 700; margin-bottom: 0.25rem; }
+    .alert-panel .alert-message { margin-bottom: 0.2rem; }
+    .alert-panel .alert-suggestion { padding-left: 0.8rem; font-size: 0.88rem; color: var(--muted); margin-bottom: 0.2rem; }
+    .alert-panel details { font-size: 0.84rem; color: var(--muted); }
+    .alert-panel details summary { cursor: pointer; user-select: none; }
+    .alert-panel .alert-correction { font-size: 0.84rem; color: var(--muted); margin-top: 0.15rem; }
+    /* Auto-dismiss progress bar */
+    .alert-bar {
+      position: absolute;
+      bottom: 0; left: 0;
+      height: 3px;
+      background: currentColor;
+      opacity: 0.5;
+      width: 100%;
+      transform-origin: left;
+      animation: drain 5s linear forwards;
+    }
+    @keyframes drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+    /* Group 3: Prayoga toast */
+    .toast-container {
+      position: fixed;
+      top: 1.5rem;
+      right: 1.5rem;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      pointer-events: none;
+    }
+    .toast {
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(134, 239, 172, 0.45);
+      color: var(--good);
+      padding: 0.6rem 1rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+      opacity: 1;
+      transition: opacity 0.4s ease;
+    }
+    .toast.fading { opacity: 0; }
+
+    /* Group 4: Event log */
+    .log-toggle-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      padding: 0;
+      width: auto;
+      text-decoration: underline;
+    }
+    .log-toggle-btn:hover { color: var(--text); }
+    .event-log {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 0.5rem;
+      padding: 0;
+      list-style: none;
+    }
+    .event-log li {
+      font-size: 0.82rem;
+      color: var(--muted);
+      padding: 0.15rem 0;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+    }
+
+    /* Group 6: Session summary overlay */
+    .summary-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(2, 6, 23, 0.7);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .summary-overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .summary-panel {
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 14px 14px 0 0;
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 700px;
+      max-height: 80vh;
+      overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform 0.35s ease;
+    }
+    .summary-overlay.visible .summary-panel {
+      transform: translateY(0);
+    }
+    .summary-panel h3 { margin: 0 0 0.8rem 0; font-size: 1.2rem; }
+    .summary-panel .summary-row { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid rgba(51, 65, 85, 0.3); font-size: 0.92rem; }
+    .summary-panel .summary-row .sr-label { color: var(--muted); }
+    .summary-panel .summary-row .sr-value { font-weight: 600; }
+    .summary-panel .summary-section { margin-top: 0.8rem; }
+    .summary-panel .summary-section h4 { margin: 0 0 0.3rem 0; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; }
+    .summary-panel ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+    .summary-panel li { font-size: 0.88rem; margin-bottom: 0.2rem; }
+    .summary-actions { display: flex; gap: 0.75rem; margin-top: 1rem; }
+    .summary-actions button { flex: 1; }
+
+    /* Group 8: Gamaka badge */
+    .gamaka-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--warn);
+      margin-left: 6px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .gamaka-badge.visible { opacity: 1; }
 
     canvas {
       width: 100%;
@@ -137,15 +267,26 @@
     <div class="card">
       <div class="controls">
         <select id="ragaSelect" aria-label="Select Raga"></select>
+        <!-- Group 5: Language selector -->
+        <select id="langSelect" aria-label="Select Language">
+          <option value="english" selected>English</option>
+          <option value="kannada">ಕನ್ನಡ</option>
+          <option value="tamil">தமிழ்</option>
+          <option value="telugu">తెలుగు</option>
+        </select>
         <button id="startBtn">Start Session</button>
         <button id="stopBtn" disabled>Stop Session</button>
       </div>
 
+      <!-- KPI grid: original 4 + Group 1 Direction & Accuracy + Group 8 Gamaka -->
       <div class="kpi-grid">
         <div class="kpi"><div class="label">Status</div><div class="value" id="status">idle</div></div>
         <div class="kpi"><div class="label">Tonic Sa</div><div class="value" id="tonic">-</div></div>
-        <div class="kpi"><div class="label">Current Swara</div><div class="value"><span id="swara">-</span> <span id="deviation" style="color: var(--muted); font-size: 0.85em; font-weight: normal; margin-left: 6px;"></span></div></div>
+        <div class="kpi"><div class="label">Current Swara</div><div class="value"><span id="swara">-</span> <span id="deviation" style="color: var(--muted); font-size: 0.85em; font-weight: normal; margin-left: 6px;"></span><span id="gamakaBadge" class="gamaka-badge"></span></div></div>
         <div class="kpi"><div class="label">Pitch</div><div class="value" id="pitch">-</div></div>
+        <div class="kpi"><div class="label">Direction</div><div class="value" id="direction">-</div></div>
+        <div class="kpi"><div class="label">Accuracy</div><div class="value" id="accuracy">-</div></div>
+        <div class="kpi"><div class="label">Gamaka</div><div class="value" id="gamaka">-</div></div>
       </div>
     </div>
 
@@ -155,15 +296,32 @@
         <canvas id="swaraCanvas" width="1100" height="280"></canvas>
       </div>
 
+      <!-- Group 2: Rich alert panel -->
       <div class="card">
         <h3 class="section-title">Alerts</h3>
-        <div id="alerts" class="alerts">No alerts</div>
+        <div id="alertPanel" class="alert-panel">No alerts</div>
+      </div>
+
+      <!-- Group 4: Event log (collapsed by default) -->
+      <div class="card">
+        <button class="log-toggle-btn" id="logToggleBtn">Show Event Log</button>
+        <ul id="eventLog" class="event-log" style="display:none;"></ul>
       </div>
     </div>
   </div>
 
+  <!-- Group 3: Prayoga toast container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Group 6: Session summary overlay -->
+  <div id="summaryOverlay" class="summary-overlay">
+    <div class="summary-panel" id="summaryPanel"></div>
+  </div>
+
   <script>
+    /* ── DOM refs ── */
     const ragaSelect = document.getElementById("ragaSelect");
+    const langSelect = document.getElementById("langSelect");
     const startBtn = document.getElementById("startBtn");
     const stopBtn = document.getElementById("stopBtn");
     const statusEl = document.getElementById("status");
@@ -171,7 +329,16 @@
     const swaraEl = document.getElementById("swara");
     const deviationEl = document.getElementById("deviation");
     const pitchEl = document.getElementById("pitch");
-    const alertsEl = document.getElementById("alerts");
+    const directionEl = document.getElementById("direction");
+    const accuracyEl = document.getElementById("accuracy");
+    const gamakaEl = document.getElementById("gamaka");
+    const gamakaBadge = document.getElementById("gamakaBadge");
+    const alertPanel = document.getElementById("alertPanel");
+    const toastContainer = document.getElementById("toastContainer");
+    const logToggleBtn = document.getElementById("logToggleBtn");
+    const eventLogEl = document.getElementById("eventLog");
+    const summaryOverlay = document.getElementById("summaryOverlay");
+    const summaryPanel = document.getElementById("summaryPanel");
     const swaraCanvas = document.getElementById("swaraCanvas");
     const swaraCtx = swaraCanvas.getContext("2d");
 
@@ -189,7 +356,17 @@
     const graphUpdateIntervalMs = 45;
     let lastGraphTs = -1;
     let latestSwaraIndex = null;
+    let latestCentsDev = 0;
+    let latestErrorType = null;
     let lastGraphPushMs = 0;
+
+    /* Group 1: live accuracy counters */
+    let totalVoicedFrames = 0;
+    let correctFrames = 0;
+
+    /* Group 8: gamaka clear timer */
+    let gamakaClearTimer = null;
+    let gamakaBadgeClearTimer = null;
 
     const appState = {
       uiState: "idle",
@@ -200,8 +377,8 @@
       swaraText: "-",
       deviationText: "",
       pitchText: "-",
-      alertsText: "No alerts",
-      alertsClass: "alerts",
+      directionText: "-",
+      directionColor: "var(--muted)",
       events: [],
       ragas: [],
     };
@@ -222,12 +399,32 @@
       ["Ni2", 11], ["N2", 11], ["Ni3", 11], ["N3", 11],
     ]);
 
-    function yForSwaraIndex(index, canvasHeight) {
+    /* ── Graph helpers ── */
+    function yForSwaraIndex(index, canvasHeight, centsDev) {
       const topPad = 12;
       const bottomPad = 14;
       const plotHeight = canvasHeight - topPad - bottomPad;
+      const step = plotHeight / (swaraLabels.length - 1);
       const t = Math.max(0, Math.min(1, index / (swaraLabels.length - 1)));
-      return (canvasHeight - bottomPad) - (t * plotHeight);
+      const baseY = (canvasHeight - bottomPad) - (t * plotHeight);
+      // Group 7: micro-position by cents_deviation (±50 cents = ±half step)
+      if (typeof centsDev === 'number' && isFinite(centsDev)) {
+        const centsOffset = Math.max(-50, Math.min(50, centsDev));
+        return baseY - (centsOffset / 100) * step;
+      }
+      return baseY;
+    }
+
+    function yForSwaraIndexBase(index, canvasHeight) {
+      return yForSwaraIndex(index, canvasHeight, 0);
+    }
+
+    /* Group 7: colour for error type */
+    function colorForErrorType(errType) {
+      if (errType === 'forbidden_note') return '#fecaca';
+      if (errType === 'forbidden_phrase') return '#fb923c';
+      if (errType === 'gamaka_missing') return '#fbbf24';
+      return '#22d3ee';
     }
 
     function persistUiState() {
@@ -254,6 +451,7 @@
       const stamp = new Date().toLocaleTimeString();
       appState.events.unshift(`[${stamp}] ${message}`);
       if (appState.events.length > 40) appState.events.length = 40;
+      renderEventLog();
     }
 
     function setState(partial) {
@@ -267,25 +465,117 @@
       swaraEl.textContent = appState.swaraText;
       deviationEl.textContent = appState.deviationText;
       pitchEl.textContent = appState.pitchText;
+      directionEl.textContent = appState.directionText;
+      directionEl.style.color = appState.directionColor;
 
-      alertsEl.textContent = appState.alertsText;
-      alertsEl.className = appState.alertsClass;
+      // Group 1: accuracy
+      if (totalVoicedFrames > 0) {
+        const pct = ((correctFrames / totalVoicedFrames) * 100).toFixed(1);
+        accuracyEl.textContent = `${pct}%`;
+      }
 
       startBtn.disabled = appState.uiState === "starting" || appState.uiState === "running";
       stopBtn.disabled = !(appState.uiState === "running" || appState.uiState === "starting");
     }
 
+    /* Group 4: Event log rendering */
+    function renderEventLog() {
+      if (eventLogEl.style.display === 'none') return;
+      eventLogEl.innerHTML = '';
+      for (const msg of appState.events) {
+        const li = document.createElement('li');
+        li.textContent = msg;
+        eventLogEl.appendChild(li);
+      }
+    }
+
+    logToggleBtn.addEventListener('click', () => {
+      const hidden = eventLogEl.style.display === 'none';
+      eventLogEl.style.display = hidden ? '' : 'none';
+      logToggleBtn.textContent = hidden ? 'Hide Event Log' : 'Show Event Log';
+      if (hidden) renderEventLog();
+    });
+
+    /* Group 2: Rich alert rendering */
+    function renderAlert(data) {
+      // data: { severity, title, message, suggestion, explanation, correction } or null for clear
+      alertPanel.innerHTML = '';
+      alertPanel.className = 'alert-panel';
+
+      if (!data) {
+        alertPanel.textContent = 'No alerts';
+        return;
+      }
+
+      alertPanel.classList.add(`severity-${data.severity}`);
+
+      if (data.icon) {
+        const prefix = document.createTextNode(data.icon + ' ');
+        alertPanel.appendChild(prefix);
+      }
+      if (data.title) {
+        const t = document.createElement('div');
+        t.className = 'alert-title';
+        t.textContent = data.title;
+        alertPanel.appendChild(t);
+      }
+      if (data.message) {
+        const m = document.createElement('div');
+        m.className = 'alert-message';
+        m.textContent = data.message;
+        alertPanel.appendChild(m);
+      }
+      if (data.suggestion) {
+        const s = document.createElement('div');
+        s.className = 'alert-suggestion';
+        s.textContent = data.suggestion;
+        alertPanel.appendChild(s);
+      }
+      if (data.explanation) {
+        const d = document.createElement('details');
+        const sum = document.createElement('summary');
+        sum.textContent = 'Explanation';
+        d.appendChild(sum);
+        const p = document.createElement('p');
+        p.textContent = data.explanation;
+        p.style.margin = '0.3rem 0 0 0';
+        d.appendChild(p);
+        alertPanel.appendChild(d);
+      }
+      if (data.correction) {
+        const c = document.createElement('div');
+        c.className = 'alert-correction';
+        c.textContent = data.correction;
+        alertPanel.appendChild(c);
+      }
+
+      // Progress bar
+      const bar = document.createElement('div');
+      bar.className = 'alert-bar';
+      alertPanel.appendChild(bar);
+    }
+
+    /* Group 3: Prayoga toast */
+    function showPrayogaToast(phrase) {
+      const phraseStr = phrase.join(' \u2192 ');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = `\u2713 Prayoga: ${phraseStr}`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => { toast.classList.add('fading'); }, 1600);
+      setTimeout(() => { toast.remove(); }, 2000);
+    }
+
+    /* ── Graph ── */
     function resolveGraphSwaraIndex(event) {
       if (event.swara) {
         const normalized = String(event.swara).trim();
         if (swaraToIndex.has(normalized)) return swaraToIndex.get(normalized);
       }
-
       if (Number.isFinite(event.swara_index)) {
         const idx = Math.round(event.swara_index);
         if (idx >= 0 && idx < swaraLabels.length) return idx;
       }
-
       return null;
     }
 
@@ -294,10 +584,11 @@
       const h = swaraCanvas.height;
       swaraCtx.clearRect(0, 0, w, h);
 
+      // Grid lines
       swaraCtx.strokeStyle = "#1e293b";
       swaraCtx.lineWidth = 1;
       for (let i = 0; i < swaraLabels.length; i++) {
-        const y = yForSwaraIndex(i, h);
+        const y = yForSwaraIndexBase(i, h);
         swaraCtx.beginPath();
         swaraCtx.moveTo(0, y);
         swaraCtx.lineTo(w, y);
@@ -310,26 +601,30 @@
 
       if (graphPoints.length < 2) return;
 
-      swaraCtx.strokeStyle = "#22d3ee";
-      swaraCtx.lineWidth = 2;
-      swaraCtx.beginPath();
-
-      const points = graphPoints.map((p, i) => ({
+      // Group 7: Draw colour-coded segments
+      const pts = graphPoints.map((p, i) => ({
         x: (i / (maxGraphPoints - 1)) * w,
-        y: yForSwaraIndex(p.swaraIndex, h),
+        y: yForSwaraIndex(p.swaraIndex, h, p.centsDev),
+        color: colorForErrorType(p.errorType),
       }));
 
-      swaraCtx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length - 1; i++) {
-        const midX = (points[i].x + points[i + 1].x) / 2;
-        const midY = (points[i].y + points[i + 1].y) / 2;
-        swaraCtx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
+      swaraCtx.lineWidth = 2;
+      for (let i = 1; i < pts.length; i++) {
+        swaraCtx.strokeStyle = pts[i].color;
+        swaraCtx.beginPath();
+        swaraCtx.moveTo(pts[i - 1].x, pts[i - 1].y);
+        if (i < pts.length - 1) {
+          const midX = (pts[i].x + pts[i + 1].x) / 2;
+          const midY = (pts[i].y + pts[i + 1].y) / 2;
+          swaraCtx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        } else {
+          swaraCtx.lineTo(pts[i].x, pts[i].y);
+        }
+        swaraCtx.stroke();
       }
-      const last = points[points.length - 1];
-      swaraCtx.lineTo(last.x, last.y);
-      swaraCtx.stroke();
 
-      // draw current point marker
+      // Current point marker
+      const last = pts[pts.length - 1];
       swaraCtx.fillStyle = "#67e8f9";
       swaraCtx.beginPath();
       swaraCtx.arc(last.x, last.y, 3, 0, Math.PI * 2);
@@ -339,16 +634,21 @@
     function animateGraph(nowMs) {
       if (latestSwaraIndex !== null) {
         if ((nowMs - lastGraphPushMs) >= 30) {
-          graphPoints.push({ swaraIndex: latestSwaraIndex, t: nowMs });
+          graphPoints.push({
+            swaraIndex: latestSwaraIndex,
+            centsDev: latestCentsDev,
+            errorType: latestErrorType,
+            t: nowMs,
+          });
           if (graphPoints.length > maxGraphPoints) graphPoints.shift();
           lastGraphPushMs = nowMs;
         }
       }
-
       drawSwaraGraph();
       window.requestAnimationFrame(animateGraph);
     }
 
+    /* ── Data loading ── */
     async function loadRagas() {
       const res = await fetch('/ragas');
       const ragas = await res.json();
@@ -383,11 +683,10 @@
       return btoa(binary);
     }
 
+    /* ── Server event handler ── */
     function handleServerEvents(payload) {
       if (!payload) return;
 
-      // Only update status from top-level payload.stage if we aren't already running.
-      // This prevents the per-chunk "bootstrapping" label from overwriting the locked state.
       if (payload.stage && appState.uiState !== 'running') {
         setState({ statusText: payload.stage });
       }
@@ -410,26 +709,85 @@
           }
           setState({ pitchText: `${event.frequency_hz ?? '-'} Hz` });
 
+          /* Group 1: Direction KPI */
+          if (event.direction) {
+            let dirText = '-';
+            let dirColor = 'var(--muted)';
+            if (event.direction === 'ascending') { dirText = '\u2191 Ascending'; dirColor = 'var(--brand)'; }
+            else if (event.direction === 'descending') { dirText = '\u2193 Descending'; dirColor = 'var(--warn)'; }
+            else if (event.direction === 'neutral') { dirText = '\u2014 Neutral'; dirColor = 'var(--muted)'; }
+            else { dirText = event.direction; }
+            setState({ directionText: dirText, directionColor: dirColor });
+          }
+
+          /* Group 1: Accuracy counter */
+          totalVoicedFrames++;
+          if (!event.error_type) {
+            correctFrames++;
+          }
+          renderState();
+
+          /* Group 3: Prayoga toast */
+          if (event.matched_phrase && Array.isArray(event.matched_phrase)) {
+            showPrayogaToast(event.matched_phrase);
+            pushEvent(`Prayoga: ${event.matched_phrase.join(' \u2192 ')}`);
+          }
+
+          /* Group 8: Gamaka KPI */
+          if (event.gamaka_type) {
+            gamakaEl.textContent = event.gamaka_type;
+            clearTimeout(gamakaClearTimer);
+            gamakaClearTimer = setTimeout(() => { gamakaEl.textContent = '-'; }, 1000);
+          }
+          if (event.gamaka_missing) {
+            gamakaBadge.textContent = '\u266A missing';
+            gamakaBadge.classList.add('visible');
+            clearTimeout(gamakaBadgeClearTimer);
+            gamakaBadgeClearTimer = setTimeout(() => { gamakaBadge.classList.remove('visible'); }, 1000);
+          }
+
+          /* Graph data */
           const graphSwaraIndex = resolveGraphSwaraIndex(event);
-          // Removed confidence >= 0.25 filter for zero-reluctance tracking
           if (graphSwaraIndex !== null) {
             if (lastGraphTs < 0 || (event.timestamp_ms - lastGraphTs) >= graphUpdateIntervalMs) {
               latestSwaraIndex = graphSwaraIndex;
+              latestCentsDev = event.cents_deviation || 0;
+              latestErrorType = event.error_type || null;
               lastGraphTs = event.timestamp_ms;
             }
           }
         }
 
+        /* Group 2: Rich alert events */
         if (event.type === 'alert_event' && event.state === 'active') {
-          setState({
-            alertsText: `${event.message} | Suggestion: ${event.suggestion || '-'}`,
-            alertsClass: 'alerts alert',
+          const severityMap = {
+            'forbidden_note': { icon: '\u26D4', severity: 'forbidden_note' },
+            'forbidden_phrase': { icon: '\u26A0', severity: 'forbidden_phrase' },
+            'gamaka_missing': { icon: '\u266A', severity: 'gamaka_missing' },
+          };
+          const sev = severityMap[event.alert] || severityMap['forbidden_note'];
+          renderAlert({
+            severity: sev.severity,
+            icon: sev.icon,
+            title: event.title || null,
+            message: event.message,
+            suggestion: event.suggestion || null,
+            explanation: event.explanation || null,
+            correction: event.correction || null,
           });
           pushEvent(`Alert: ${event.message}`);
         }
 
         if (event.type === 'alert_event' && event.state === 'cleared') {
-          setState({ alertsText: 'Forbidden-note alert cleared', alertsClass: 'alerts ok' });
+          renderAlert({
+            severity: 'cleared',
+            icon: '\u2713',
+            title: null,
+            message: 'Alert cleared',
+            suggestion: null,
+            explanation: null,
+            correction: null,
+          });
           pushEvent('Alert cleared');
         }
 
@@ -444,18 +802,27 @@
       }
     }
 
+    /* ── Session lifecycle ── */
     async function startSession() {
       const raga = ragaSelect.value;
       if (!raga) return;
+
+      /* Reset accuracy counters */
+      totalVoicedFrames = 0;
+      correctFrames = 0;
+      accuracyEl.textContent = '-';
+      gamakaEl.textContent = '-';
+      renderAlert(null);
 
       setState({ uiState: 'starting', statusText: 'starting', selectedRaga: raga });
       persistUiState();
       pushEvent(`Starting session for ${raga}`);
 
+      const language = langSelect.value;
       const res = await fetch('/session/start', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ raga_name: raga, bootstrap_seconds: 1.5 })
+        body: JSON.stringify({ raga_name: raga, bootstrap_seconds: 1.5, language: language })
       });
       const session = await res.json();
       sessionId = session.session_id;
@@ -470,12 +837,14 @@
 
       ws.onerror = (err) => {
         console.error('WebSocket error:', err);
-        setState({
-          uiState: 'error',
-          wsState: 'error',
-          alertsText: 'WebSocket connection error',
-          alertsClass: 'alerts alert',
+        renderAlert({
+          severity: 'forbidden_note',
+          icon: '\u26D4',
+          title: 'Connection Error',
+          message: 'WebSocket connection error',
+          suggestion: 'Check your network and try again',
         });
+        setState({ uiState: 'error', wsState: 'error' });
         pushEvent('WebSocket error');
       };
 
@@ -532,17 +901,17 @@
           }
         });
         console.log('Got microphone stream:', mediaStream.getAudioTracks().length, 'audio tracks');
-        
+
         audioContext = new (window.AudioContext || window.webkitAudioContext)({
           latencyHint: 'interactive',
           sampleRate: 22050,
         });
         console.log('AudioContext created, sampleRate:', audioContext.sampleRate);
-        
+
         console.log('Loading audio worklet...');
         await audioContext.audioWorklet.addModule('/static/audio-worklet.js');
         console.log('Worklet module loaded');
-        
+
         sourceNode = audioContext.createMediaStreamSource(mediaStream);
         workletNode = new AudioWorkletNode(audioContext, 'chunk-capture-processor', {
           processorOptions: { bufferSize: 512 }
@@ -559,8 +928,6 @@
             if (chunkCount === 1) console.warn('WebSocket not ready yet');
             return;
           }
-          // Real-time guard: if transport is backpressured, drop oldest live chunk
-          // instead of building latency.
           if (ws.bufferedAmount > 256 * 1024) {
             return;
           }
@@ -584,22 +951,97 @@
         graphPoints.length = 0;
         lastGraphTs = -1;
         latestSwaraIndex = null;
+        latestCentsDev = 0;
+        latestErrorType = null;
         lastGraphPushMs = performance.now();
         drawSwaraGraph();
         pushEvent('Audio capture ready');
         console.log('Audio capture ready');
       } catch (err) {
         console.error('Error during audio setup:', err);
-        setState({
-          uiState: 'error',
-          statusText: 'error',
-          alertsText: `Audio error: ${err.message}`,
-          alertsClass: 'alerts alert',
+        renderAlert({
+          severity: 'forbidden_note',
+          icon: '\u26D4',
+          title: 'Audio Error',
+          message: err.message,
+          suggestion: 'Check microphone permissions and try again',
         });
+        setState({ uiState: 'error', statusText: 'error' });
         pushEvent(`Audio error: ${err.message}`);
         if (ws && ws.readyState === WebSocket.OPEN) ws.close();
       }
     }
+
+    /* Group 6: session summary rendering */
+    function showSessionSummary(summary) {
+      if (!summary) return;
+      const fb = summary.feedback || {};
+      const v = summary.validation || {};
+
+      let html = `<h3>${fb.session_title || summary.raga + ' Session Summary'}</h3>`;
+
+      // Score & accuracy
+      html += `<div class="summary-row"><span class="sr-label">Performance Score</span><span class="sr-value">${fb.performance_score !== undefined ? fb.performance_score.toFixed(1) : '-'}</span></div>`;
+      html += `<div class="summary-row"><span class="sr-label">Total Notes</span><span class="sr-value">${fb.total_notes ?? '-'}</span></div>`;
+      html += `<div class="summary-row"><span class="sr-label">Errors</span><span class="sr-value">${fb.error_count ?? '-'} (${fb.error_rate ?? '-'})</span></div>`;
+      html += `<div class="summary-row"><span class="sr-label">Pitch Accuracy</span><span class="sr-value">${fb.pitch_accuracy ?? '-'}</span></div>`;
+      html += `<div class="summary-row"><span class="sr-label">Forbidden Phrases</span><span class="sr-value">${summary.forbidden_phrase_count ?? 0}</span></div>`;
+      html += `<div class="summary-row"><span class="sr-label">Prayogas Completed</span><span class="sr-value">${summary.characteristic_phrases_completed ?? 0}</span></div>`;
+
+      // Assessment
+      if (fb.assessment) {
+        html += `<div class="summary-section"><h4>Assessment</h4><p style="margin:0;font-size:0.92rem;">${fb.assessment}</p></div>`;
+      }
+
+      // Phrase details
+      if (summary.phrase_details && summary.phrase_details.length > 0) {
+        html += `<div class="summary-section"><h4>Characteristic Phrases</h4><ul>`;
+        const phraseCounts = {};
+        for (const p of summary.phrase_details) {
+          const key = p.join(' \u2192 ');
+          phraseCounts[key] = (phraseCounts[key] || 0) + 1;
+        }
+        for (const [phrase, count] of Object.entries(phraseCounts)) {
+          html += `<li>${phrase} &times; ${count}</li>`;
+        }
+        html += `</ul></div>`;
+      }
+
+      // Recommendations
+      if (fb.recommendations && fb.recommendations.length > 0) {
+        html += `<div class="summary-section"><h4>Recommendations</h4><ul>`;
+        for (const rec of fb.recommendations) {
+          html += `<li>${rec}</li>`;
+        }
+        html += `</ul></div>`;
+      }
+
+      // Action buttons
+      html += `<div class="summary-actions">`;
+      html += `<button id="summaryCloseBtn">Close</button>`;
+      html += `<button id="summaryCopyBtn">Copy to Clipboard</button>`;
+      html += `</div>`;
+
+      summaryPanel.innerHTML = html;
+      summaryOverlay.classList.add('visible');
+
+      document.getElementById('summaryCloseBtn').addEventListener('click', () => {
+        summaryOverlay.classList.remove('visible');
+      });
+      document.getElementById('summaryCopyBtn').addEventListener('click', () => {
+        const text = summaryPanel.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+          const btn = document.getElementById('summaryCopyBtn');
+          btn.textContent = 'Copied!';
+          setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 1500);
+        });
+      });
+    }
+
+    // Close overlay on background click
+    summaryOverlay.addEventListener('click', (e) => {
+      if (e.target === summaryOverlay) summaryOverlay.classList.remove('visible');
+    });
 
     async function stopSession() {
       setState({ uiState: 'stopping', statusText: 'stopping' });
@@ -618,13 +1060,9 @@
       if (sessionId) {
         const res = await fetch(`/session/${sessionId}/stop`, { method: 'POST' });
         const summary = await res.json();
-        if (summary?.feedback?.performance_score !== undefined) {
-          setState({
-            alertsText: `Session score: ${summary.feedback.performance_score.toFixed(1)}`,
-            alertsClass: 'alerts ok',
-          });
-          pushEvent(`Session score: ${summary.feedback.performance_score.toFixed(1)}`);
-        }
+        /* Group 6: Show full session summary */
+        showSessionSummary(summary);
+        pushEvent(`Session score: ${summary?.feedback?.performance_score?.toFixed?.(1) ?? '-'}`);
       }
 
       setState({ uiState: 'idle', statusText: 'stopped', wsState: 'disconnected' });
