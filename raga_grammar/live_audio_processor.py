@@ -44,7 +44,7 @@ class LiveProcessorConfig:
 class LiveAudioProcessor:
     """Stateful live audio processor for one student session."""
 
-    def __init__(self, raga_name: str, config: Optional[LiveProcessorConfig] = None):
+    def __init__(self, raga_name: str, config: Optional[LiveProcessorConfig] = None, language: str = "english"):
         self.raga_name = raga_name
         self.config = config or LiveProcessorConfig()
         self.pipeline = RealTimeGrammarPipeline(
@@ -56,7 +56,8 @@ class LiveAudioProcessor:
             pyin_hop_length=self.config.pyin_hop_length,
             min_frame_rms=self.config.min_frame_rms,
         )
-        self.feedback = FeedbackGenerator()
+        from .feedback_generator import Language
+        self.feedback = FeedbackGenerator(language=Language(language))
 
         self._audio_buffer = np.array([], dtype=np.float32)
         self._bootstrap_buffer = np.array([], dtype=np.float32)
@@ -176,6 +177,8 @@ class LiveAudioProcessor:
                 else None
             )
             event["description"] = frame.validation_event.description
+            if frame.validation_event.matched_phrase is not None:
+                event["matched_phrase"] = frame.validation_event.matched_phrase
 
         return event
 
@@ -254,6 +257,9 @@ class LiveAudioProcessor:
                     "direction": validation.direction.value,
                     "message": feedback.get("message", validation.description),
                     "suggestion": feedback.get("suggestion", ""),
+                    "title": feedback.get("title", ""),
+                    "explanation": feedback.get("explanation", ""),
+                    "correction": feedback.get("correction", ""),
                     "confidence": round(validation.confidence, 3),
                 }
             )
@@ -340,10 +346,14 @@ class LiveAudioProcessor:
             self.raga_name,
         )
 
+        events = self.pipeline.grammar_validator.events
         return {
             "raga": self.raga_name,
             "stage": self.stage,
             "tonic_hz": self._tonic_hz,
             "validation": summary,
             "feedback": feedback_summary,
+            "forbidden_phrase_count": len([e for e in events if e.error_type == ErrorType.FORBIDDEN_PHRASE]),
+            "characteristic_phrases_completed": len([e for e in events if e.matched_phrase is not None]),
+            "phrase_details": [e.matched_phrase for e in events if e.matched_phrase is not None],
         }
