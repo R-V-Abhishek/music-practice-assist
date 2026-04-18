@@ -14,9 +14,11 @@ from raga_grammar.raga_database import get_raga_info, list_available_ragas
 from web.session_manager import SessionManager
 
 
+
 class StartSessionBody(BaseModel):
     raga_name: str
     bootstrap_seconds: float = 1.5
+    language: str = "english"
 
 
 app = FastAPI(title="Live Raga Practice")
@@ -46,6 +48,7 @@ def start_session(body: StartSessionBody) -> Dict[str, Any]:
     session = session_manager.create_session(
         raga_name=body.raga_name,
         bootstrap_seconds=body.bootstrap_seconds,
+        language=body.language,
     )
     return {
         "session_id": session.session_id,
