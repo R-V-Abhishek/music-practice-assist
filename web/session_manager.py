@@ -22,13 +22,13 @@ class SessionManager:
         self._lock = threading.Lock()
         self._sessions: Dict[str, LiveSession] = {}
 
-    def create_session(self, raga_name: str, bootstrap_seconds: float = 1.5) -> LiveSession:
+    def create_session(self, raga_name: str, bootstrap_seconds: float = 1.5, language: str = "english") -> LiveSession:
         session_id = str(uuid.uuid4())
         config = LiveProcessorConfig(bootstrap_seconds=bootstrap_seconds)
         session = LiveSession(
             session_id=session_id,
             raga_name=raga_name,
-            processor=LiveAudioProcessor(raga_name=raga_name, config=config),
+            processor=LiveAudioProcessor(raga_name=raga_name, config=config, language=language),
         )
 
         with self._lock:
