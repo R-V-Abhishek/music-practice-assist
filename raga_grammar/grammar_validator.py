@@ -10,6 +10,7 @@ Handles vakra ragas, zigzag patterns, and direction-sensitive forbidden notes.
 """
 
 import numpy as np
+from collections import deque
 from typing import List, Optional, Dict, Set, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -24,6 +25,7 @@ class ErrorType(Enum):
     SEQUENCE_VIOLATION = "sequence_violation" 
     WRONG_DIRECTION = "wrong_direction"
     UNEXPECTED_JUMP = "unexpected_jump"
+    FORBIDDEN_PHRASE = "forbidden_phrase"
 
 class Direction(Enum):
     """Musical direction states"""
@@ -45,6 +47,108 @@ class ValidationEvent:
     expected_swara: Optional[str] = None
     description: str = ""
     confidence: float = 1.0
+    matched_phrase: Optional[List[str]] = None
+
+def _derive_vakra_skip_phrases(sequence: List[str]) -> List[List[str]]:
+    """Derive forbidden skip phrases from a vakra arohana/avarohana sequence.
+
+    At each zigzag point *b* in the triplet [a, b, c], the pair [a, c] is a
+    forbidden skip — the musician must not jump directly from *a* to *c*,
+    skipping the required vakra detour through *b*.
+
+    The trailing "Sa" (octave boundary marker) is stripped before analysis so
+    that the wrap-around Sa→Sa at the octave edge does not create a spurious
+    zigzag.
+    """
+    if len(sequence) < 3:
+        return []
+
+    # Strip the trailing Sa (octave boundary marker)
+    seq = sequence[:-1] if sequence[-1] == 'Sa' else list(sequence)
+
+    if len(seq) < 3:
+        return []
+
+    # Convert to cent values
+    cents = [SWARA_CENTS.get(s, -1) for s in seq]
+
+    phrases: List[List[str]] = []
+    for i in range(len(cents) - 2):
+        c0, c1, c2 = cents[i], cents[i + 1], cents[i + 2]
+        if c0 < 0 or c1 < 0 or c2 < 0:
+            continue
+        diff1 = c1 - c0
+        diff2 = c2 - c1
+        if diff1 * diff2 < 0:  # Direction reversal = zigzag
+            a, c = seq[i], seq[i + 2]
+            if a != c:  # Skip same-swara pairs (e.g. Ga1→Ri1→Ga1)
+                phrases.append([a, c])
+    return phrases
+
+
+class PhraseBuffer:
+    """Rolling buffer of recent swara names for phrase-level detection."""
+
+    def __init__(self, maxlen: int = 10):
+        self._buf: deque = deque(maxlen=maxlen)
+
+    def push(self, swara: str) -> None:
+        self._buf.append(swara)
+
+    def reset(self) -> None:
+        self._buf.clear()
+
+    def __len__(self) -> int:
+        return len(self._buf)
+
+    def __getitem__(self, idx: int) -> str:
+        return self._buf[idx]
+
+
+class ForbiddenPhraseDetector:
+    """Detects forbidden skip phrases in a swara buffer."""
+
+    def __init__(self, forbidden_phrases: List[List[str]]):
+        # Store as set of tuples for O(1) lookup
+        self._forbidden = {tuple(p) for p in forbidden_phrases}
+
+    def check(self, buf: PhraseBuffer) -> Optional[List[str]]:
+        """Return the forbidden phrase if the last two swaras match, else None."""
+        if len(buf) < 2:
+            return None
+        pair = (buf[-2], buf[-1])
+        if pair in self._forbidden:
+            return list(pair)
+        return None
+
+
+class CharacteristicPhraseDetector:
+    """Detects characteristic (prayoga) phrases via suffix-match on the swara buffer.
+
+    Longest match wins so that when a short phrase is a suffix of a longer one,
+    the more complete prayoga is reported.
+    """
+
+    def __init__(self, phrases: List[List[str]], maxlen: int = 20):
+        self._by_length: Dict[int, Set[Tuple[str, ...]]] = {}
+        for p in phrases:
+            if 2 <= len(p) <= maxlen:
+                key = tuple(p)
+                self._by_length.setdefault(len(p), set()).add(key)
+        # Pre-sorted lengths in decreasing order for longest-match-first iteration
+        self._sorted_lengths: List[int] = sorted(self._by_length.keys(), reverse=True)
+
+    def check(self, buf: PhraseBuffer) -> Optional[List[str]]:
+        """Return the longest matching characteristic phrase, or None."""
+        buf_len = len(buf)
+        for L in self._sorted_lengths:
+            if buf_len < L:
+                continue
+            tail = tuple(buf[i] for i in range(buf_len - L, buf_len))
+            if tail in self._by_length[L]:
+                return list(tail)
+        return None
+
 
 class DirectionDetector:
     """Detects ascending/descending motion from swara sequence"""
@@ -179,7 +283,19 @@ class RagaGrammarValidator:
         
         # Octave-aware pairwise direction tracking for validation
         self._prev_swara_result: Optional[SwaraResult] = None
-        
+
+        # Phase 3: Forbidden phrase detection
+        _forbidden_phrases = (
+            _derive_vakra_skip_phrases(self.raga_info.arohana)
+            + _derive_vakra_skip_phrases(self.raga_info.avarohana)
+        )
+        self.phrase_buffer = PhraseBuffer(maxlen=20)
+        self.phrase_detector = ForbiddenPhraseDetector(_forbidden_phrases)
+
+        # Phase 4: Characteristic phrase recognition
+        _char_phrases = self.raga_info.special_phrases + self.raga_info.characteristic_phrases
+        self.characteristic_detector = CharacteristicPhraseDetector(_char_phrases, maxlen=20)
+
         # Validation history
         self.events: List[ValidationEvent] = []
         self.start_time = time.time()
@@ -244,7 +360,26 @@ class RagaGrammarValidator:
         # Unified membership validation (forbidden-note + direction check in one step)
         error = self.fsm.validate_sequence(swara, validation_direction)
         expected_swaras = self.fsm.get_expected_swaras(validation_direction)
-        
+
+        matched_phrase: Optional[List[str]] = None
+
+        if error:
+            # Membership fail — do NOT push to phrase buffer
+            description = f"Forbidden note {swara} in {validation_direction.value} for {self.raga_name}"
+        else:
+            # Membership pass — check phrase-level forbidden skip patterns
+            self.phrase_buffer.push(swara)
+            matched = self.phrase_detector.check(self.phrase_buffer)
+            if matched:
+                error = ErrorType.FORBIDDEN_PHRASE
+                description = f"Forbidden skip {matched[0]}\u2192{matched[1]} in {self.raga_name}"
+            else:
+                description = "Valid swara"
+                # Check for characteristic phrase completion (positive feedback)
+                matched_char = self.characteristic_detector.check(self.phrase_buffer)
+                if matched_char:
+                    matched_phrase = matched_char
+
         event = ValidationEvent(
             timestamp_ms=timestamp_ms,
             swara=swara,
@@ -254,13 +389,11 @@ class RagaGrammarValidator:
             error_type=error,
             direction=ui_direction,
             expected_swara=expected_swaras[0] if expected_swaras else None,
-            description=(
-                "Valid swara" if not error
-                else f"Forbidden note {swara} in {validation_direction.value} for {self.raga_name}"
-            ),
-            confidence=swara_result.confidence
+            description=description,
+            confidence=swara_result.confidence,
+            matched_phrase=matched_phrase
         )
-        
+
         self.events.append(event)
         self._prev_swara_result = swara_result
         return event
@@ -284,11 +417,17 @@ class RagaGrammarValidator:
             'duration_ms': self.events[-1].timestamp_ms if self.events else 0
         }
     
+    def reset_phrase_buffer(self):
+        """Reset phrase buffer and pairwise direction state between melodic phrases."""
+        self.phrase_buffer.reset()
+        self._prev_swara_result = None
+
     def reset(self):
         """Reset validator state for new analysis"""
         self.direction_detector.reset()
         self.fsm.reset()
         self._prev_swara_result = None
+        self.phrase_buffer.reset()
         self.events.clear()
         self.start_time = time.time()
     

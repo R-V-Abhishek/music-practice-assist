@@ -458,6 +458,9 @@ class RealTimeGrammarPipeline:
         self._kalman_P = None
         self._octave_error_count = 0
 
+        if self.grammar_validator is not None:
+            self.grammar_validator.reset_phrase_buffer()
+
     def _update_unvoiced_and_maybe_reset(self, timestamp_ms: float, voiced: bool) -> None:
         """
         Track unvoiced duration and reset stale continuity/hysteresis after pauses.
