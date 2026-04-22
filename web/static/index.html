@@ -350,6 +350,7 @@
     let sourceNode = null;
     let workletNode = null;
     let sessionId = null;
+    let _teardownInProgress = false;
     let chunkId = 0;
     const graphPoints = [];
     const maxGraphPoints = 180;
@@ -683,6 +684,39 @@
       return btoa(binary);
     }
 
+    async function teardownAudioCapture() {
+      if (_teardownInProgress) return;
+      _teardownInProgress = true;
+
+      try {
+        if (workletNode && workletNode.port) {
+          workletNode.port.onmessage = null;
+          workletNode.port.onmessageerror = null;
+        }
+
+        if (workletNode) {
+          try { workletNode.disconnect(); } catch (_) {}
+        }
+        if (sourceNode) {
+          try { sourceNode.disconnect(); } catch (_) {}
+        }
+
+        if (audioContext && audioContext.state !== 'closed') {
+          try { await audioContext.close(); } catch (_) {}
+        }
+
+        if (mediaStream) {
+          try { mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+        }
+      } finally {
+        workletNode = null;
+        sourceNode = null;
+        audioContext = null;
+        mediaStream = null;
+        _teardownInProgress = false;
+      }
+    }
+
     /* ── Server event handler ── */
     function handleServerEvents(payload) {
       if (!payload) return;
@@ -807,6 +841,9 @@
       const raga = ragaSelect.value;
       if (!raga) return;
 
+      // Ensure prior take resources are fully released before creating new ones.
+      await teardownAudioCapture();
+
       /* Reset accuracy counters */
       totalVoicedFrames = 0;
       correctFrames = 0;
@@ -852,10 +889,7 @@
         console.log('WebSocket closed');
         setState({ wsState: 'disconnected' });
         pushEvent('WebSocket closed');
-        if (workletNode) workletNode.disconnect();
-        if (sourceNode) sourceNode.disconnect();
-        if (audioContext) await audioContext.close();
-        if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+        await teardownAudioCapture();
       };
 
       ws.onopen = async () => {
@@ -1052,10 +1086,7 @@
         ws.close();
       }
 
-      if (workletNode) workletNode.disconnect();
-      if (sourceNode) sourceNode.disconnect();
-      if (audioContext) await audioContext.close();
-      if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+      await teardownAudioCapture();
 
       if (sessionId) {
         const res = await fetch(`/session/${sessionId}/stop`, { method: 'POST' });

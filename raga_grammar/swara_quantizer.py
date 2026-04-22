@@ -31,9 +31,18 @@ class SwaraQuantizer:
     
     # Carnatic note ratios from Sa (imported from tonic_sa_detection.py logic)
     CARNATIC_RATIOS = {
-        'Sa': 1.0, 'Ri1': 256/243, 'Ri2': 9/8, 'Ga2': 32/27,
-        'Ga3': 5/4, 'Ma1': 4/3, 'Ma2': 45/32, 'Pa': 3/2,
-        'Dha1': 128/81, 'Dha2': 5/3, 'Ni2': 16/9, 'Ni3': 15/8,
+        'Sa': 1.0,
+        'Ri1': 256/243,
+        'Ri2': 9/8, 'Ga1': 9/8,
+        'Ga2': 32/27, 'Ri3': 32/27,
+        'Ga3': 5/4,
+        'Ma1': 4/3,
+        'Ma2': 45/32,
+        'Pa': 3/2,
+        'Dha1': 128/81,
+        'Dha2': 5/3, 'Ni1': 5/3,
+        'Ni2': 16/9, 'Dha3': 16/9,
+        'Ni3': 15/8,
     }
     
     # Convert ratios to cents for easier comparison

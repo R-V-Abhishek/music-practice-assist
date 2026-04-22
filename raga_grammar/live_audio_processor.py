@@ -22,6 +22,8 @@ from .grammar_validator import ErrorType
 from .pitch_pipeline import FrameResult, RealTimeGrammarPipeline
 from .swara_quantizer import get_swara_ordinal
 
+_ALERT_ERRORS = {ErrorType.FORBIDDEN_NOTE, ErrorType.FORBIDDEN_PHRASE}
+
 
 @dataclass
 class LiveProcessorConfig:
@@ -78,6 +80,7 @@ class LiveAudioProcessor:
         self._forbidden_trigger_ms: float = 500.0
         # Clear alert (and reset timers) after 300ms of NO forbidden notes
         self._forbidden_clear_ms: float = 300.0
+        self._active_alert_type: Optional[str] = None
 
     def _reconfigure_for_input_sr(self, input_sr: int) -> None:
         """Bind pipeline to mic sample rate and preserve time-window durations."""
@@ -187,7 +190,7 @@ class LiveAudioProcessor:
         validation = frame.validation_event
         ts = frame.timestamp_ms
 
-        if validation is None or validation.error_type != ErrorType.FORBIDDEN_NOTE:
+        if validation is None or validation.error_type not in _ALERT_ERRORS:
             # Frame-count debounce path (used by tests and deterministic behavior)
             self._consecutive_forbidden = 0
             self._consecutive_clean += 1
@@ -203,11 +206,12 @@ class LiveAudioProcessor:
                     alerts.append(
                         {
                             "type": "alert_event",
-                            "alert": "forbidden_note",
+                            "alert": self._active_alert_type or ErrorType.FORBIDDEN_NOTE.value,
                             "state": "cleared",
                             "timestamp_ms": round(ts, 2),
                         }
                     )
+                    self._active_alert_type = None
 
             # Also clear based on configured clean-frame count.
             if (
@@ -221,11 +225,12 @@ class LiveAudioProcessor:
                 alerts.append(
                     {
                         "type": "alert_event",
-                        "alert": "forbidden_note",
+                        "alert": self._active_alert_type or ErrorType.FORBIDDEN_NOTE.value,
                         "state": "cleared",
                         "timestamp_ms": round(ts, 2),
                     }
                 )
+                self._active_alert_type = None
             return alerts
 
         # Forbidden note detected: start or continue tracking
@@ -246,11 +251,12 @@ class LiveAudioProcessor:
         ):
             self._forbidden_alert_active = True
             self._consecutive_forbidden = 0
+            self._active_alert_type = validation.error_type.value
             feedback = self.feedback.generate_feedback(validation, self.raga_name)
             alerts.append(
                 {
                     "type": "alert_event",
-                    "alert": "forbidden_note",
+                    "alert": validation.error_type.value,
                     "state": "active",
                     "timestamp_ms": round(ts, 2),
                     "swara": validation.swara,

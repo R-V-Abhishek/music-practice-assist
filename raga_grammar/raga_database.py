@@ -31,10 +31,18 @@ class RagaInfo:
 
 # 12 Carnatic swaras with their standard cent values (from Sa)
 SWARA_CENTS = {
-    'Sa': 0,      'Ri1': 90,   'Ri2': 204,   'Ri3': 294,
-    'Ga1': 294,   'Ga2': 386,  'Ga3': 498,   'Ma1': 498, 
-    'Ma2': 612,   'Pa': 702,   'Dha1': 792,  'Dha2': 906,
-    'Dha3': 996,  'Ni1': 996,  'Ni2': 1088, 'Ni3': 1200
+    'Sa': 0,
+    'Ri1': 90,
+    'Ri2': 204,   'Ga1': 204,
+    'Ri3': 294,   'Ga2': 294,
+    'Ga3': 386,
+    'Ma1': 498,
+    'Ma2': 612,
+    'Pa': 702,
+    'Dha1': 792,
+    'Dha2': 906,  'Ni1': 906,
+    'Dha3': 996,  'Ni2': 996,
+    'Ni3': 1088,
 }
 
 # All 12 swara positions for Melakarta generation
@@ -178,8 +186,8 @@ _RAGA_DEFINITIONS = {
     },
     
     "Śrīranjani": {
-        "arohana": ["Sa", "Ri2", "Ga2", "Ma1", "Da2", "Ni2", "Sa"],  
-        "avarohana": ["Sa", "Ni2", "Da2", "Ma1", "Ga2", "Ri2", "Sa"],
+        "arohana": ["Sa", "Ri2", "Ga2", "Ma1", "Dha2", "Ni2", "Sa"],  
+        "avarohana": ["Sa", "Ni2", "Dha2", "Ma1", "Ga2", "Ri2", "Sa"],
         "parent_mela": 22,
         "janya": True
     },
@@ -189,7 +197,7 @@ _RAGA_DEFINITIONS = {
         "avarohana": ["Sa", "Ni2", "Dha2", "Pa", "Ma1", "Ga3", "Ri2", "Sa"],
         "parent_mela": 28,
         "janya": True,
-        "special_phrases": [["Sa", "Ni3", "Da2", "Ni2"]]
+        "special_phrases": [["Sa", "Ni3", "Dha2", "Ni2"]]
     },
     
     "Tōḍi": {
@@ -217,14 +225,14 @@ _RAGA_DEFINITIONS = {
     
     "Kāpi": {
         "arohana": ["Sa", "Ri2", "Ma1", "Pa", "Ni3", "Sa"],  # Ma, Ni varja
-        "avarohana": ["Sa", "Ni2", "Da2", "Ni2", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
+        "avarohana": ["Sa", "Ni2", "Dha2", "Ni2", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
         "parent_mela": 22,
         "janya": True,
         "special_phrases": [["Ni2", "Pa", "Ga2"],["Sa", "Ni2", "Pa"]]
     },
     
     "Nāṭakurinji": {
-        "arohana": ["Sa", "Ri2", "Ga1", "Ma2", "Ni2", "Da2", "Ni2", "Pa", "Dha2", "Ni2", "Sa"],
+        "arohana": ["Sa", "Ri2", "Ga1", "Ma2", "Ni2", "Dha2", "Ni2", "Pa", "Dha2", "Ni2", "Sa"],
         "avarohana": ["Sa", "Ni2", "Dha2", "Ma1", "Ga3", "Ri2", "Sa"],
         "parent_mela": 8,
         "janya": True,

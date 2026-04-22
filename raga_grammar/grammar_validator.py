@@ -19,6 +19,24 @@ import time
 from .raga_database import RagaInfo, get_raga_info, SWARA_CENTS
 from .swara_quantizer import SwaraResult, get_swara_ordinal
 
+ENHARMONIC_PAIRS = [
+    ('Ri2', 'Ga1'),
+    ('Ri3', 'Ga2'),
+    ('Dha2', 'Ni1'),
+    ('Ni2', 'Dha3'),
+]
+
+
+def _resolve_enharmonic(swara: str, raga_info: RagaInfo) -> str:
+    """Return raga-preferred enharmonic alias when only one name is used."""
+    all_raga_swaras = set(raga_info.arohana) | set(raga_info.avarohana)
+    for a, b in ENHARMONIC_PAIRS:
+        if swara == a and b in all_raga_swaras and a not in all_raga_swaras:
+            return b
+        if swara == b and a in all_raga_swaras and b not in all_raga_swaras:
+            return a
+    return swara
+
 class ErrorType(Enum):
     """Types of raga grammar violations"""
     FORBIDDEN_NOTE = "forbidden_note"
@@ -350,6 +368,13 @@ class RagaGrammarValidator:
             timestamp_ms = (time.time() - self.start_time) * 1000
         
         swara = swara_result.swara
+        swara = _resolve_enharmonic(swara, self.raga_info)
+        swara_result = SwaraResult(
+            swara=swara,
+            octave=swara_result.octave,
+            cents_deviation=swara_result.cents_deviation,
+            confidence=swara_result.confidence,
+        )
         
         # UI display direction (phrase-level, from DirectionDetector)
         ui_direction = self.direction_detector.add_swara(swara)
