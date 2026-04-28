@@ -209,7 +209,7 @@ _RAGA_DEFINITIONS = {
     
     "Mukhāri": {
         "arohana": ["Sa", "Ri2", "Ma1", "Pa", "Dha2", "Sa"],
-        "avarohana": ["Sa", "Ni1", "Dha1", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
+        "avarohana": ["Sa", "Ni2", "Dha1", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
         "parent_mela": 22,
         "janya": True,
         "special_phrases": [["Ni2", "Dha2", "Ma1"], ["Pa", "Ni2", "Dha2"]]

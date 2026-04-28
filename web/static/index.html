@@ -750,6 +750,7 @@
             if (event.direction === 'ascending') { dirText = '\u2191 Ascending'; dirColor = 'var(--brand)'; }
             else if (event.direction === 'descending') { dirText = '\u2193 Descending'; dirColor = 'var(--warn)'; }
             else if (event.direction === 'neutral') { dirText = '\u2014 Neutral'; dirColor = 'var(--muted)'; }
+            else if (event.direction === 'unknown') { dirText = '-'; dirColor = 'var(--muted)'; }
             else { dirText = event.direction; }
             setState({ directionText: dirText, directionColor: dirColor });
           }

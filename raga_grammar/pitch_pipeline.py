@@ -36,6 +36,52 @@ class FrameResult:
     swara_result: Optional[SwaraResult]
     validation_event: Optional[ValidationEvent]
 
+class ShruthiHMM:
+    """GC-SHMM forward prediction for gap filling."""
+    def __init__(self, quantizer: SwaraQuantizer):
+        self.quantizer = quantizer
+        self.num_states = 22
+        self.alpha = np.ones(self.num_states) / self.num_states
+        
+    def reset(self):
+        self.alpha = np.ones(self.num_states) / self.num_states
+        
+    def step_forward(self, emission_probs: Optional[np.ndarray] = None):
+        new_alpha = np.zeros(self.num_states)
+        for j in range(self.num_states):
+            sum_prob = 0.0
+            for i in range(self.num_states):
+                cent_i = self.quantizer.SHRUTI_CENTS_22[i]
+                cent_j = self.quantizer.SHRUTI_CENTS_22[j]
+                
+                dist1 = abs(cent_j - cent_i)
+                dist2 = abs(cent_j + 1200.0 - cent_i)
+                dist3 = abs(cent_j - 1200.0 - cent_i)
+                min_dist = min(dist1, dist2, dist3)
+                
+                # grammar constraints: 200 cents max leap in gap prediction
+                if min_dist <= 200.0:
+                    trans_prob = np.exp(- (0.1 / 100.0) * min_dist)
+                else:
+                    trans_prob = 0.0
+                
+                sum_prob += self.alpha[i] * trans_prob
+            
+            new_alpha[j] = sum_prob
+        
+        if emission_probs is not None:
+            new_alpha *= emission_probs
+            
+        s = np.sum(new_alpha)
+        if s > 0:
+            self.alpha = new_alpha / s
+        else:
+            self.alpha = np.ones(self.num_states) / self.num_states
+            
+    def get_best_state(self) -> int:
+        return int(np.argmax(self.alpha))
+
+
 class RealTimeGrammarPipeline:
     """
     Real-time audio analysis pipeline for raga grammar validation.
@@ -71,16 +117,15 @@ class RealTimeGrammarPipeline:
         self.raga_name = raga_name
         self.sr = sr
 
-        # Transition responsiveness/stability tuning.
-        # Balanced toward the documented behavior: fast but not flickery.
-        self._hysteresis_fast_switch_conf = 0.76
-        self._hysteresis_candidate_min_count = 2
-        self._hysteresis_candidate_switch_conf = 0.52
-        self._min_duration_hold_ms = 38.0
-        self._min_duration_low_motion_st_per_sec = 10.0
-        self._min_duration_not_strong_conf = 0.78
-        self._majority_hold_conf_max = 0.45
-        self._hysteresis_log2_margin = 25.0 / 1200.0
+        # Responsiveness-first tuning: react quickly to swara changes
+        self._hysteresis_fast_switch_conf = 0.60      # was 0.50
+        self._hysteresis_candidate_min_count = 1      
+        self._hysteresis_candidate_switch_conf = 0.35 
+        self._min_duration_hold_ms = 18.0             
+        self._min_duration_low_motion_st_per_sec = 6.0  
+        self._min_duration_not_strong_conf = 0.60     
+        self._majority_hold_conf_max = 0.25           
+        self._hysteresis_log2_margin = 25.0 / 1200.0  # was 15.0 / 1200.0
         
         # Verify raga exists
         if not get_raga_info(raga_name):
@@ -95,8 +140,8 @@ class RealTimeGrammarPipeline:
 
         # Real-time pitch stabilization state
         # Keep this intentionally lightweight for fast note transitions.
-        self._f0_history = deque(maxlen=3)
-        self._swara_history = deque(maxlen=3)
+        self._f0_history = deque(maxlen=2)    
+        self._swara_history = deque(maxlen=2)  
         self._stable_swara: Optional[str] = None
         self._candidate_swara: Optional[str] = None
         self._candidate_count: int = 0
@@ -114,14 +159,14 @@ class RealTimeGrammarPipeline:
         self._mpm_rms_threshold: float = 0.008
         self._mpm_key_threshold: float = 0.93
         self._mpm_min_hz: float = 50.0
-        self._mpm_max_hz: float = 2000.0
+        self._mpm_max_hz: float = 800.0  # Indian classical: female taara ~1108Hz, 800Hz is safe ceiling
         self._mpm_pitch_history: deque[float] = deque(maxlen=3)
 
         # Adaptive 2-state Kalman smoothing [pitch_hz, velocity_hz_per_frame]
         self._kalman_state: Optional[np.ndarray] = None
         self._kalman_P: Optional[np.ndarray] = None
-        self._kalman_q_base: float = 0.9
-        self._kalman_r_base: float = 120.0
+        self._kalman_q_base: float = 2.0    
+        self._kalman_r_base: float = 20.0   
         
         # Initialize components
         self.tonic_detector = TonicSaDetector(sr=sr)
@@ -159,6 +204,7 @@ class RealTimeGrammarPipeline:
         self.sa_frequency = sa_frequency
         self.swara_quantizer = SwaraQuantizer(self.sa_frequency)
         self.grammar_validator = RagaGrammarValidator(self.raga_name)
+        self.hmm = ShruthiHMM(self.swara_quantizer)
 
         qmin_hz, qmax_hz = self.swara_quantizer.get_supported_frequency_range()
         
@@ -457,6 +503,8 @@ class RealTimeGrammarPipeline:
         self._kalman_state = None
         self._kalman_P = None
         self._octave_error_count = 0
+        if hasattr(self, 'hmm'):
+            self.hmm.reset()
 
         if self.grammar_validator is not None:
             self.grammar_validator.reset_phrase_buffer()
@@ -959,6 +1007,8 @@ class RealTimeGrammarPipeline:
             frame_rms = float(np.sqrt(np.mean(np.square(audio_frame))))
             if frame_rms < self.min_frame_rms:
                 self._update_unvoiced_and_maybe_reset(timestamp_ms, voiced=False)
+                if self.grammar_validator is not None:
+                    self.grammar_validator.tick_direction(timestamp_ms)
                 return FrameResult(
                     timestamp_ms=timestamp_ms,
                     frequency_hz=0,
@@ -968,22 +1018,55 @@ class RealTimeGrammarPipeline:
                     validation_event=None
                 )
 
-            # ===== STAGE 2: HYBRID TONIC-FOCUSED SWARA ESTIMATION =====
+            # ===== STAGE 2: LOW-LATENCY HZ ESTIMATION =====
             if not self.sa_frequency:
                 return None
 
             mpm_estimate = self._estimate_swara_from_mpm(audio_frame)
             acpt_estimate = self._estimate_swara_from_acpt(audio_frame)
-            spectral_estimate = None
-            yin_estimate = None
-            # Keep heavy estimators as fallbacks only when low-latency paths fail.
-            if mpm_estimate is None and acpt_estimate is None:
-                spectral_estimate = self._estimate_swara_from_spectrum(audio_frame)
 
-            if mpm_estimate is None and acpt_estimate is None and spectral_estimate is None:
-                yin_estimate = self._estimate_swara_from_yin(audio_frame)
+            raw_hz = None
+            if mpm_estimate is not None and acpt_estimate is not None:
+                mpm_hz, mpm_conf = mpm_estimate[1], mpm_estimate[2]
+                acpt_hz, acpt_conf = acpt_estimate[1], acpt_estimate[2]
+                # Reject blend if estimators disagree by >0.5 octave (spike indicator)
+                if abs(math.log2((mpm_hz + 1e-9) / (acpt_hz + 1e-9))) > 0.5:
+                    # Trust the lower estimate — vocal fundamentals are lower than harmonics
+                    raw_hz = mpm_hz if mpm_hz < acpt_hz else acpt_hz
+                else:
+                    total_conf = mpm_conf + acpt_conf
+                    if total_conf > 0:
+                        raw_hz = (mpm_hz * mpm_conf + acpt_hz * acpt_conf) / total_conf
+            elif acpt_estimate is not None:
+                raw_hz = acpt_estimate[1]
+            elif mpm_estimate is not None:
+                raw_hz = mpm_estimate[1]
 
-            if mpm_estimate is None and acpt_estimate is None and spectral_estimate is None and yin_estimate is None:
+            if raw_hz is not None:
+                # ===== STAGE 2C: FST CORRECTION =====
+                fst_result = self.swara_quantizer.fst_correct(raw_hz, getattr(self, '_last_shruti_idx', None))
+                if fst_result is not None:
+                    swara_result, best_shruti_idx = fst_result
+                    self._last_shruti_idx = best_shruti_idx
+                    stabilized_frequency = raw_hz
+                    voicing_prob = swara_result.confidence
+                    
+                    # Update HMM forward pass with actual observation
+                    emission = np.zeros(22)
+                    raw_cents = 1200.0 * np.log2(raw_hz / self.sa_frequency)
+                    while raw_cents < 0: raw_cents += 1200.0
+                    while raw_cents >= 1200.0: raw_cents -= 1200.0
+                    for i, c in enumerate(self.swara_quantizer.SHRUTI_CENTS_22):
+                        dev1 = raw_cents - c
+                        dev2 = (raw_cents - 1200.0) - c
+                        dev3 = (raw_cents + 1200.0) - c
+                        dev = min([dev1, dev2, dev3], key=abs)
+                        emission[i] = np.exp(-0.5 * (dev / 25.0)**2)
+                    self.hmm.step_forward(emission)
+                else:
+                    raw_hz = None
+
+            if raw_hz is None:
                 # Bridge short glottal closures/unvoiced gaps by holding last stable pitch.
                 if (
                     self._last_frequency_hz is not None
@@ -994,6 +1077,7 @@ class RealTimeGrammarPipeline:
                     if held_result is not None:
                         validation_event = self.grammar_validator.validate_swara(held_result, timestamp_ms)
                         validation_event.frequency_hz = self._last_frequency_hz
+                        self.grammar_validator.tick_direction(timestamp_ms)
                         return FrameResult(
                             timestamp_ms=timestamp_ms,
                             frequency_hz=float(self._last_frequency_hz),
@@ -1002,6 +1086,46 @@ class RealTimeGrammarPipeline:
                             swara_result=held_result,
                             validation_event=validation_event,
                         )
+                        
+                # ---------------- NEW GC-SHMM GAP FILL ---------------- #
+                # If we've been tracking, and now we hit a >70ms gap, use GC-SHMM
+                # Skip first 150ms of silence to suppress phantom end-notes
+                if self._last_frequency_hz is not None and 150.0 <= getattr(self, '_unvoiced_ms_accum', 0) < 300.0:
+                    self.hmm.step_forward(None) # uniform emission
+                    best_s = self.hmm.get_best_state()
+                    swara_name = self.swara_quantizer.SHRUTI_TO_SWARA[best_s]
+                    
+                    # Estimate octave based on previous frame
+                    last_octave = 0
+                    if getattr(self, '_last_frequency_hz', None):
+                        oct_est = int(np.round(np.log2(self._last_frequency_hz / self.sa_frequency)))
+                        last_octave = max(self.swara_quantizer.MIN_OCTAVE_OFFSET, min(self.swara_quantizer.MAX_OCTAVE_OFFSET, oct_est))
+                        
+                    predicted_result = SwaraResult(
+                        swara=swara_name,
+                        octave=last_octave,
+                        cents_deviation=0.0,
+                        confidence=0.15 # Low confidence
+                    )
+                    
+                    freq_hz = self.swara_quantizer.sa_frequency * (2 ** (self.swara_quantizer.SHRUTI_CENTS_22[best_s] / 1200.0)) * (2 ** last_octave)
+                    
+                    validation_event = self.grammar_validator.validate_swara(predicted_result, timestamp_ms)
+                    validation_event.frequency_hz = freq_hz
+                    self.grammar_validator.tick_direction(timestamp_ms)
+                    
+                    # Do not update self._last_frequency_hz from HMM to avoid diverging forever
+                    self._update_unvoiced_and_maybe_reset(timestamp_ms, voiced=False)
+                    return FrameResult(
+                        timestamp_ms=timestamp_ms,
+                        frequency_hz=freq_hz,
+                        voiced=True, # Mark as voiced so UI plots it
+                        voicing_prob=0.15,
+                        swara_result=predicted_result,
+                        validation_event=validation_event
+                    )
+                # ------------------------------------------------------ #
+                
                 self._update_unvoiced_and_maybe_reset(timestamp_ms, voiced=False)
                 return FrameResult(
                     timestamp_ms=timestamp_ms,
@@ -1012,28 +1136,14 @@ class RealTimeGrammarPipeline:
                     validation_event=None
                 )
 
-            if mpm_estimate is not None:
-                swara_result, stabilized_frequency, voicing_prob = mpm_estimate
-            elif acpt_estimate is not None:
-                swara_result, stabilized_frequency, voicing_prob = acpt_estimate
-            elif yin_estimate is not None:
-                swara_result, stabilized_frequency, voicing_prob = yin_estimate
-            else:
-                swara_result, stabilized_frequency, voicing_prob = spectral_estimate
-
-            # If we reached here, we have a valid swara_result, stabilized_frequency, and voicing_prob
-            # from one of the estimators.
-            # The original code had a complex combination logic for acpt_estimate and spectral_estimate
-            # when both were present. The new instruction implies prioritizing one over the other
-            # rather than combining them. So, if acpt_estimate was chosen, we use it directly.
-            # If yin_estimate was chosen, we use it directly.
-            # If spectral_estimate was chosen, we use it directly.
-            # The combination logic is removed as per the instruction to prioritize.
-
             # ===== STAGE 3A: CONTINUITY CONSTRAINT =====
             stabilized_frequency = self._apply_frequency_continuity(stabilized_frequency, timestamp_ms)
             stabilized_frequency = self._apply_octave_jump_guard(stabilized_frequency)
-            stabilized_frequency = self._apply_kalman_smoothing(stabilized_frequency, confidence=voicing_prob)
+            
+            # Kalman on cents for smoother pitch
+            raw_cents = 1200.0 * np.log2(stabilized_frequency / self.sa_frequency)
+            smooth_cents = self._apply_kalman_smoothing(raw_cents, confidence=voicing_prob)
+            stabilized_frequency = self.sa_frequency * (2 ** (smooth_cents / 1200.0))
 
             # ===== STAGE 3B: LOCAL FREQUENCY REFINEMENT =====
             # Disabled to allow continuous frequency gliding ("aas" and "oos") 
@@ -1119,6 +1229,8 @@ class RealTimeGrammarPipeline:
             validation_event = self.grammar_validator.validate_swara(
                 swara_result, timestamp_ms)
             validation_event.frequency_hz = stabilized_frequency
+            
+            self.grammar_validator.tick_direction(timestamp_ms)
             
             return FrameResult(
                 timestamp_ms=timestamp_ms,

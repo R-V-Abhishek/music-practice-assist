@@ -22,25 +22,23 @@ from .grammar_validator import ErrorType
 from .pitch_pipeline import FrameResult, RealTimeGrammarPipeline
 from .swara_quantizer import get_swara_ordinal
 
-_ALERT_ERRORS = {ErrorType.FORBIDDEN_NOTE, ErrorType.FORBIDDEN_PHRASE}
+_ALERT_ERRORS = {ErrorType.FORBIDDEN_NOTE, ErrorType.FORBIDDEN_PHRASE, ErrorType.SEQUENCE_VIOLATION}
 
 
 @dataclass
 class LiveProcessorConfig:
     target_sr: int = 22050
     adapt_to_input_sr: bool = False
-    bootstrap_seconds: float = 1.5
-    min_voicing_prob: float = 0.25
-    forbidden_trigger_frames: int = 3
+    bootstrap_seconds: float = 1.0      # was 1.5
+    min_voicing_prob: float = 0.10
+    forbidden_trigger_frames: int = 15
     forbidden_clear_frames: int = 3
-    # Match the reference pipeline's stable analysis geometry:
-    # 2048-sample windows with 50% overlap.
-    frame_length: int = 2048
-    hop_length: int = 1024
+    frame_length: int = 1024            # was 2048 — halved for 46ms updates
+    hop_length: int = 512               # was 1024
     pyin_frame_length: int = 1024
     pyin_hop_length: int = 256
-    min_frame_rms: float = 0.02
-    min_swara_confidence: float = 0.25
+    min_frame_rms: float = 0.008
+    min_swara_confidence: float = 0.10
 
 
 class LiveAudioProcessor:
@@ -73,13 +71,12 @@ class LiveAudioProcessor:
         self._consecutive_clean = 0
         self._forbidden_alert_active = False
         # Time-based forbidden note debounce (in ms)
-        # Time-based forbidden note debounce (in ms)
         self._forbidden_start_ms: Optional[float] = None
         self._forbidden_last_seen_ms: Optional[float] = None
-        # Trigger alert after 500ms of forbidden note (allowing medium glides to pass)
-        self._forbidden_trigger_ms: float = 500.0
-        # Clear alert (and reset timers) after 300ms of NO forbidden notes
-        self._forbidden_clear_ms: float = 300.0
+        # Trigger alert after 950ms of forbidden note (allowing medium glides to pass)
+        self._forbidden_trigger_ms: float = 950.0
+        # Clear alert (and reset timers) after 600ms of NO forbidden notes
+        self._forbidden_clear_ms: float = 600.0
         self._active_alert_type: Optional[str] = None
 
     def _reconfigure_for_input_sr(self, input_sr: int) -> None:
@@ -179,6 +176,11 @@ class LiveAudioProcessor:
                 if frame.validation_event.error_type is not None
                 else None
             )
+            event["secondary_error_type"] = (
+                frame.validation_event.secondary_error.value
+                if frame.validation_event.secondary_error is not None
+                else None
+            )
             event["description"] = frame.validation_event.description
             if frame.validation_event.matched_phrase is not None:
                 event["matched_phrase"] = frame.validation_event.matched_phrase
@@ -213,24 +215,6 @@ class LiveAudioProcessor:
                     )
                     self._active_alert_type = None
 
-            # Also clear based on configured clean-frame count.
-            if (
-                self._forbidden_alert_active
-                and self._consecutive_clean >= self.config.forbidden_clear_frames
-            ):
-                self._forbidden_alert_active = False
-                self._forbidden_start_ms = None
-                self._forbidden_last_seen_ms = None
-                self._consecutive_clean = 0
-                alerts.append(
-                    {
-                        "type": "alert_event",
-                        "alert": self._active_alert_type or ErrorType.FORBIDDEN_NOTE.value,
-                        "state": "cleared",
-                        "timestamp_ms": round(ts, 2),
-                    }
-                )
-                self._active_alert_type = None
             return alerts
 
         # Forbidden note detected: start or continue tracking
@@ -242,12 +226,11 @@ class LiveAudioProcessor:
         
         self._forbidden_last_seen_ms = ts
 
-        trigger_by_frames = self._consecutive_forbidden >= self.config.forbidden_trigger_frames
         trigger_by_time = (ts - self._forbidden_start_ms) >= self._forbidden_trigger_ms
 
         if (
             not self._forbidden_alert_active
-            and (trigger_by_frames or trigger_by_time)
+            and trigger_by_time
         ):
             self._forbidden_alert_active = True
             self._consecutive_forbidden = 0
@@ -257,6 +240,7 @@ class LiveAudioProcessor:
                 {
                     "type": "alert_event",
                     "alert": validation.error_type.value,
+                    "secondary_alert": validation.secondary_error.value if validation.secondary_error else None,
                     "state": "active",
                     "timestamp_ms": round(ts, 2),
                     "swara": validation.swara,

@@ -58,6 +58,39 @@ class SwaraQuantizer:
     SA_ANCHOR_SNAP_CENTS = 75.0
     NI3_SNAP_CONFIDENCE_MAX = 0.65
 
+    # 22-Shruti scale cents from ShrutiSense paper
+    SHRUTI_CENTS_22 = [
+        0, 90, 112, 182, 204, 294, 316, 386, 408, 498, 520,
+        590, 612, 702, 792, 814, 884, 906, 996, 1018, 1088, 1110
+    ]
+
+    # Map each Shruti index to a named Swara (resolving aliases to primary Carnatic names)
+    # Unnamed intermediate Shrutis are snapped to nearest named Swara and tagged.
+    SHRUTI_TO_SWARA = {
+        0: 'Sa',
+        1: 'Ri1',
+        2: 'Ri1 (Shruti 2)',
+        3: 'Ri2 (Shruti 3)',
+        4: 'Ri2',
+        5: 'Ga2',
+        6: 'Ga2 (Shruti 6)',
+        7: 'Ga3',
+        8: 'Ga3 (Shruti 8)',
+        9: 'Ma1',
+        10: 'Ma1 (Shruti 10)',
+        11: 'Ma2',
+        12: 'Ma2 (Shruti 12)',
+        13: 'Pa',
+        14: 'Dha1',
+        15: 'Dha1 (Shruti 15)',
+        16: 'Dha2',
+        17: 'Dha2 (Shruti 17)',
+        18: 'Ni2',
+        19: 'Ni2 (Shruti 19)',
+        20: 'Ni3',
+        21: 'Ni3 (Shruti 21)',
+    }
+
     # Supported live range relative to tonic:
     # ati anumaandra Sa (Sa/4) to ati taara Sa (4*Sa)
     MIN_OCTAVE_OFFSET = -2
@@ -305,6 +338,94 @@ class SwaraQuantizer:
             confidence=confidence
         )
     
+    def fst_correct(self, frequency: float, prev_shruti_idx: Optional[int] = None) -> Optional[Tuple[SwaraResult, int]]:
+        """
+        Shruti-aware Finite-State Transducer (FST) for live correction.
+        Uses paper Eq. 5: w = 0.6*c_pitch + 0.3*c_grammar + 0.1*c_edit
+        
+        Args:
+            frequency: Input frequency in Hz
+            prev_shruti_idx: Shruti index from the previous frame for c_grammar
+            
+        Returns:
+            Tuple of (SwaraResult, best_shruti_idx) or None
+        """
+        if not self.is_frequency_in_range(frequency):
+            return None
+
+        norm_freq, octave = self._normalize_to_tonic_band(frequency)
+        if norm_freq is None:
+            return None
+
+        # Convert to raw cents in [0, 1200)
+        raw_cents = 1200.0 * np.log2(norm_freq / self.sa_frequency)
+        while raw_cents < 0: raw_cents += 1200.0
+        while raw_cents >= 1200.0: raw_cents -= 1200.0
+
+        best_score = -float('inf')
+        second_best_score = -float('inf')
+        best_shruti = -1
+        best_dev = 0.0
+
+        for i, shruti_cent in enumerate(self.SHRUTI_CENTS_22):
+            # Calculate cyclic cents deviation
+            dev1 = raw_cents - shruti_cent
+            dev2 = (raw_cents - 1200.0) - shruti_cent
+            dev3 = (raw_cents + 1200.0) - shruti_cent
+            
+            dev_cents = min([dev1, dev2, dev3], key=abs)
+            
+            # c_pitch: paper uses -|deviation| / 50
+            # FST uses sigma=25 for scoring, but accepts wider deviations gracefully
+            c_pitch = -abs(dev_cents) / 50.0
+
+            # c_grammar: Gaussian transition prior over cents
+            if prev_shruti_idx is not None:
+                prev_cent = self.SHRUTI_CENTS_22[prev_shruti_idx]
+                dist1 = abs(shruti_cent - prev_cent)
+                dist2 = abs(shruti_cent + 1200.0 - prev_cent)
+                dist3 = abs(shruti_cent - 1200.0 - prev_cent)
+                min_dist = min(dist1, dist2, dist3)
+                # alpha = 0.1/100 as proxy for transition weight
+                c_grammar = - (0.1 / 100.0) * min_dist
+            else:
+                c_grammar = 0.0
+
+            # c_edit: 0 for match
+            c_edit = 0.0
+
+            # Total score
+            score = 0.6 * c_pitch + 0.3 * c_grammar + 0.1 * c_edit
+
+            if score > best_score:
+                second_best_score = best_score
+                best_score = score
+                best_shruti = i
+                best_dev = dev_cents
+            elif score > second_best_score:
+                second_best_score = score
+
+        if best_shruti == -1:
+            return None
+
+        # Tolerance check
+        if abs(best_dev) > self.TOLERANCE_CENTS:
+            return None
+
+        # Confidence via softmax-like margin
+        margin = best_score - second_best_score
+        confidence = float(np.clip(1.0 / (1.0 + np.exp(-margin * 10)), 0.0, 1.0))
+        
+        swara_name = self.SHRUTI_TO_SWARA[best_shruti]
+        
+        result = SwaraResult(
+            swara=swara_name,
+            octave=octave,
+            cents_deviation=float(best_dev),
+            confidence=confidence
+        )
+        return result, best_shruti
+    
     def to_swara_sequence(self, frequencies: np.ndarray, 
                          min_confidence: float = 0.5) -> list[SwaraResult]:
         """
@@ -339,10 +460,11 @@ class SwaraQuantizer:
         Returns:
             Frequency in Hz
         """
-        if swara not in self.CARNATIC_RATIOS:
+        base = swara.split(' (')[0]  # strip '(Shruti N)' suffix if present
+        if base not in self.CARNATIC_RATIOS:
             raise ValueError(f"Unknown swara: {swara}")
         
-        base_ratio = self.CARNATIC_RATIOS[swara]
+        base_ratio = self.CARNATIC_RATIOS[base]
         octave_multiplier = 2 ** octave
         return self.sa_frequency * base_ratio * octave_multiplier
     
@@ -376,16 +498,21 @@ class SwaraQuantizer:
 def get_swara_ordinal(swara: str) -> int:
     """
     Get numeric position of swara for sequence validation.
-    
-    Args:
-        swara: Swara name
-        
-    Returns:
-        Ordinal position (0-11), used for detecting ascending/descending motion
+    Accepts tagged names like 'Ri1 (Shruti 2)' transparently.
     """
-    swara_order = ['Sa', 'Ri1', 'Ri2', 'Ga1', 'Ga2', 'Ma1', 'Ma2', 
-                   'Pa', 'Dha1', 'Dha2', 'Ni1', 'Ni2']
-    try:
-        return swara_order.index(swara)
-    except ValueError:
-        return -1  # Unknown swara
+    base = swara.split(' (')[0]  # strip '(Shruti N)' suffix
+    swara_indices = {
+        'Sa': 0,
+        'Ri1': 1,
+        'Ri2': 2, 'Ga1': 2,
+        'Ga2': 3, 'Ri3': 3,
+        'Ga3': 4,
+        'Ma1': 5,
+        'Ma2': 6,
+        'Pa': 7,
+        'Dha1': 8,
+        'Dha2': 9, 'Ni1': 9,
+        'Ni2': 10, 'Dha3': 10,
+        'Ni3': 11
+    }
+    return swara_indices.get(base, -1)

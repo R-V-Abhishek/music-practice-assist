@@ -66,6 +66,7 @@ class ValidationEvent:
     description: str = ""
     confidence: float = 1.0
     matched_phrase: Optional[List[str]] = None
+    secondary_error: Optional[ErrorType] = None  # Second violation when both FORBIDDEN_NOTE + SEQUENCE_VIOLATION apply
 
 def _derive_vakra_skip_phrases(sequence: List[str]) -> List[List[str]]:
     """Derive forbidden skip phrases from a vakra arohana/avarohana sequence.
@@ -168,48 +169,127 @@ class CharacteristicPhraseDetector:
         return None
 
 
-class DirectionDetector:
-    """Detects ascending/descending motion from swara sequence"""
+class PairwiseDirectionTracker:
+    """Detects ascending/descending motion immediately between two distinct notes."""
     
-    def __init__(self, history_length: int = 3):
-        self.history: List[str] = []
-        self.history_length = history_length
-    
-    def add_swara(self, swara: str) -> Direction:
-        """Add swara and detect current direction"""
-        self.history.append(swara)
-        if len(self.history) > self.history_length:
-            self.history.pop(0)
+    def __init__(self, neutral_timeout_ms: float = 1750.0):
+        self._dir = Direction.NEUTRAL
+        self._last_note_time: Optional[float] = None
+        self._last_confirmed_swara: Optional[str] = None
+        self._last_octave: Optional[int] = None
+        self.neutral_timeout_ms = neutral_timeout_ms
+
+    def update(self, swara: str, octave: int, timestamp_ms: float) -> Direction:
+        swara = swara.split(' (')[0]  # strip '(Shruti N)' tag
+        if self._last_confirmed_swara != swara or self._last_octave != octave:
+            if self._last_confirmed_swara is not None and self._last_octave is not None:
+                prev_cents = SWARA_CENTS.get(self._last_confirmed_swara)
+                curr_cents = SWARA_CENTS.get(swara)
+                if prev_cents is not None and curr_cents is not None:
+                    prev_pos = self._last_octave * 1200 + prev_cents
+                    curr_pos = octave * 1200 + curr_cents
+                    if curr_pos > prev_pos:
+                        self._dir = Direction.ASCENDING
+                    elif curr_pos < prev_pos:
+                        self._dir = Direction.DESCENDING
+            
+            self._last_confirmed_swara = swara
+            self._last_octave = octave
+            self._last_note_time = timestamp_ms
+
+        if self._last_note_time is not None and (timestamp_ms - self._last_note_time) >= self.neutral_timeout_ms:
+            self._dir = Direction.NEUTRAL
         
-        if len(self.history) < 2:
-            return Direction.UNKNOWN
+        return self._dir
+
+    def tick(self, timestamp_ms: float) -> bool:
+        """Returns True if timeout just fired"""
+        if self._dir != Direction.NEUTRAL and self._last_note_time is not None:
+            if (timestamp_ms - self._last_note_time) >= self.neutral_timeout_ms:
+                self._dir = Direction.NEUTRAL
+                return True
+        return False
         
-        # Get ordinal positions for direction calculation
-        ordinals = [get_swara_ordinal(s) for s in self.history if get_swara_ordinal(s) >= 0]
-        if len(ordinals) < 2:
-            return Direction.UNKNOWN
-        
-        # Analyze recent motion (weighted toward recent notes)
-        direction_score = 0
-        for i in range(1, len(ordinals)):
-            diff = ordinals[i] - ordinals[i-1]
-            weight = i / len(ordinals)  # Recent notes have higher weight
-            if diff > 0:
-                direction_score += weight
-            elif diff < 0:
-                direction_score -= weight
-        
-        # Classify direction
-        if direction_score > 0.3:
-            return Direction.ASCENDING
-        elif direction_score < -0.3:
-            return Direction.DESCENDING
-        else:
-            return Direction.NEUTRAL
-    
     def reset(self):
-        """Reset direction history"""
-        self.history.clear()
+        self._dir = Direction.NEUTRAL
+        self._last_note_time = None
+        self._last_confirmed_swara = None
+        self._last_octave = None
+
+class SubsequenceTracker:
+    """Tracks strict sequential traversal of arohana/avarohana with special phrase bypass."""
+    def __init__(self, raga_info: RagaInfo, lookahead: int = 3):
+        self.arohana = raga_info.arohana
+        self.avarohana = raga_info.avarohana
+        self.special_phrases = raga_info.special_phrases
+        self.lookahead = lookahead
+        self._aro_ptr = 0
+        self._ava_ptr = 0
+        
+    def reset(self):
+        self._aro_ptr = 0
+        self._ava_ptr = 0
+        
+    def step(self, swara: str, prev_swara: Optional[str], direction: Direction, phrase_buf: PhraseBuffer) -> bool:
+        if swara == prev_swara:
+            return True
+            
+        # Check special phrase bypass first
+        buf_list = [phrase_buf[i] for i in range(len(phrase_buf))] + [swara]
+        for sp in self.special_phrases:
+            if len(buf_list) >= len(sp):
+                if buf_list[-len(sp):] == sp:
+                    self._sync_pointers_to_swara(swara)
+                    return True
+                    
+        is_valid = False
+        
+        # Arohana traversal
+        if direction != Direction.DESCENDING:
+            new_ptr = self._find_next_ptr(swara, self.arohana, self._aro_ptr)
+            if new_ptr is not None:
+                self._aro_ptr = new_ptr
+                is_valid = True
+                
+        # Avarohana traversal
+        if direction != Direction.ASCENDING:
+            new_ptr = self._find_next_ptr(swara, self.avarohana, self._ava_ptr)
+            if new_ptr is not None:
+                self._ava_ptr = new_ptr
+                is_valid = True
+
+        if not is_valid:
+            if prev_swara is None:
+                self._sync_pointers_to_swara(swara)
+                return True
+            return False
+            
+        return True
+        
+    def _find_next_ptr(self, swara: str, sequence: List[str], current_ptr: int) -> Optional[int]:
+        if not sequence:
+            return None
+        for i in range(1, self.lookahead + 1):
+            next_idx = (current_ptr + i) % len(sequence)
+            if sequence[next_idx] == swara:
+                return next_idx
+        return None
+        
+    def _sync_pointers_to_swara(self, swara: str):
+        for seq, ptr_attr in [(self.arohana, '_aro_ptr'), (self.avarohana, '_ava_ptr')]:
+            current_ptr = getattr(self, ptr_attr)
+            best_idx = current_ptr
+            min_dist = float('inf')
+            found = False
+            for i, s in enumerate(seq):
+                if s == swara:
+                    found = True
+                    dist = min(abs(i - current_ptr), len(seq) - abs(i - current_ptr))
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_idx = i
+            if found:
+                setattr(self, ptr_attr, best_idx)
 
 class RagaGrammarFSM:
     """Stateless per-step membership validator for raga swaras.
@@ -257,8 +337,9 @@ class RagaGrammarFSM:
                 return ErrorType.FORBIDDEN_NOTE
             return None
         
-        # NEUTRAL — swara must belong to at least one direction's set
-        if swara not in self.arohana_set and swara not in self.avarohana_set:
+        # Still apply directional varja: a note varja in BOTH directions is always forbidden.
+        # A note varja only in one direction is allowed in NEUTRAL (ambiguous motion).
+        if swara in self.raga_info.varja_arohana and swara in self.raga_info.varja_avarohana:
             return ErrorType.FORBIDDEN_NOTE
         
         return None
@@ -296,8 +377,14 @@ class RagaGrammarValidator:
             raise ValueError(f"Raga '{raga_name}' not found in database")
         
         self.raga_name = raga_name
-        self.direction_detector = DirectionDetector()  # UI display direction only
+        self.direction_tracker = PairwiseDirectionTracker(neutral_timeout_ms=1750.0)
+        
+        # Conditional grammar mode
+        self._has_special_phrases = len(self.raga_info.special_phrases) > 0
+        self._mode = "full" if self._has_special_phrases else "simple"
+        
         self.fsm = RagaGrammarFSM(self.raga_info)
+        self.subsequence_tracker = SubsequenceTracker(self.raga_info)
         
         # Octave-aware pairwise direction tracking for validation
         self._prev_swara_result: Optional[SwaraResult] = None
@@ -368,6 +455,7 @@ class RagaGrammarValidator:
             timestamp_ms = (time.time() - self.start_time) * 1000
         
         swara = swara_result.swara
+        swara = swara.split(' (')[0]  # strip '(Shruti N)' tag if present
         swara = _resolve_enharmonic(swara, self.raga_info)
         swara_result = SwaraResult(
             swara=swara,
@@ -376,34 +464,77 @@ class RagaGrammarValidator:
             confidence=swara_result.confidence,
         )
         
-        # UI display direction (phrase-level, from DirectionDetector)
-        ui_direction = self.direction_detector.add_swara(swara)
+        # UI display direction
+        ui_direction = self.direction_tracker.update(swara, swara_result.octave, timestamp_ms)
         
         # Octave-aware pairwise direction for validation decisions
         validation_direction = self._get_step_direction(self._prev_swara_result, swara_result)
         
-        # Unified membership validation (forbidden-note + direction check in one step)
-        error = self.fsm.validate_sequence(swara, validation_direction)
-        expected_swaras = self.fsm.get_expected_swaras(validation_direction)
-
-        matched_phrase: Optional[List[str]] = None
-
-        if error:
-            # Membership fail — do NOT push to phrase buffer
-            description = f"Forbidden note {swara} in {validation_direction.value} for {self.raga_name}"
+        error = None
+        expected_swaras = []
+        matched_phrase = None
+        description = "Valid swara"
+        
+        if self._mode == "simple":
+            # Mode 1: Absolute forbidden note only
+            secondary_error = None
+            if swara not in self.fsm.arohana_set and swara not in self.fsm.avarohana_set:
+                error = ErrorType.FORBIDDEN_NOTE
+                description = f"Forbidden note {swara} in {self.raga_name}"
+            expected_swaras = list(self.fsm.arohana_set | self.fsm.avarohana_set)
         else:
-            # Membership pass — check phrase-level forbidden skip patterns
+            # Mode 2: Full grammar
+            secondary_error = None
+
+            # 1. Push phrase_buffer FIRST so special-phrase bypass has full context
             self.phrase_buffer.push(swara)
-            matched = self.phrase_detector.check(self.phrase_buffer)
-            if matched:
-                error = ErrorType.FORBIDDEN_PHRASE
-                description = f"Forbidden skip {matched[0]}\u2192{matched[1]} in {self.raga_name}"
+
+            # 2. Special phrase bypass — if current swara completes a special phrase,
+            #    skip all varja and sequence checks for this step
+            buf_list = [self.phrase_buffer[i] for i in range(len(self.phrase_buffer))]
+            in_special_phrase = False
+            for sp in self.raga_info.special_phrases:
+                if len(buf_list) >= len(sp) and buf_list[-len(sp):] == sp:
+                    in_special_phrase = True
+                    if self._prev_swara_result is not None:
+                        self.subsequence_tracker._sync_pointers_to_swara(swara)
+                    break
+
+            if not in_special_phrase:
+                # 3. Direction-based varja check
+                error = self.fsm.validate_sequence(swara, validation_direction)
+                expected_swaras = self.fsm.get_expected_swaras(validation_direction)
+                if error:
+                    description = f"Forbidden note {swara} in {validation_direction.value} for {self.raga_name}"
+
+                # 4. Sequential subsequence check — always run to track pointer
+                prev_s = self._prev_swara_result.swara if self._prev_swara_result else None
+                is_valid_seq = self.subsequence_tracker.step(swara, prev_s, validation_direction, self.phrase_buffer)
+                if not is_valid_seq:
+                    seq_err = ErrorType.SEQUENCE_VIOLATION
+                    seq_desc = f"Sequence violation at {swara} in {validation_direction.value}"
+                    if error is None:
+                        error = seq_err
+                        description = seq_desc
+                    else:
+                        # Both apply — stash sequence violation as secondary
+                        secondary_error = seq_err
+                        description = f"{description}; {seq_desc}"
+
+                # 5. Forbidden skip phrase check (vakra skips)
+                if not error:
+                    matched = self.phrase_detector.check(self.phrase_buffer)
+                    if matched:
+                        error = ErrorType.FORBIDDEN_PHRASE
+                        description = f"Forbidden skip {matched[0]}\u2192{matched[1]} in {self.raga_name}"
+                    else:
+                        matched_char = self.characteristic_detector.check(self.phrase_buffer)
+                        if matched_char:
+                            matched_phrase = matched_char
             else:
-                description = "Valid swara"
-                # Check for characteristic phrase completion (positive feedback)
-                matched_char = self.characteristic_detector.check(self.phrase_buffer)
-                if matched_char:
-                    matched_phrase = matched_char
+                # Inside special phrase — run subsequence sync, no errors
+                expected_swaras = self.fsm.get_expected_swaras(validation_direction)
+                secondary_error = None
 
         event = ValidationEvent(
             timestamp_ms=timestamp_ms,
@@ -416,7 +547,8 @@ class RagaGrammarValidator:
             expected_swara=expected_swaras[0] if expected_swaras else None,
             description=description,
             confidence=swara_result.confidence,
-            matched_phrase=matched_phrase
+            matched_phrase=matched_phrase,
+            secondary_error=secondary_error,
         )
 
         self.events.append(event)
@@ -446,11 +578,18 @@ class RagaGrammarValidator:
         """Reset phrase buffer and pairwise direction state between melodic phrases."""
         self.phrase_buffer.reset()
         self._prev_swara_result = None
+        self.subsequence_tracker.reset()
+        
+    def tick_direction(self, timestamp_ms: float):
+        """Called every voiced frame to update neutral timeout"""
+        if self.direction_tracker.tick(timestamp_ms):
+            self.reset_phrase_buffer()
 
     def reset(self):
         """Reset validator state for new analysis"""
-        self.direction_detector.reset()
+        self.direction_tracker.reset()
         self.fsm.reset()
+        self.subsequence_tracker.reset()
         self._prev_swara_result = None
         self.phrase_buffer.reset()
         self.events.clear()
