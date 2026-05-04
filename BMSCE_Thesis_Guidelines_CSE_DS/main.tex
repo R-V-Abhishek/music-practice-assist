@@ -26,7 +26,13 @@
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds, shadows.blur}
 \usepackage{eso-pic}
+\usepackage{colortbl}
+\usepackage{booktabs}
 \usepackage{listings}
+\usepackage{microtype}
+\definecolor{tableheadbg}{RGB}{30,80,150}
+\definecolor{tablerowA}{RGB}{240,245,255}
+\definecolor{tablerowB}{RGB}{255,255,255}
 \lstdefinestyle{pythonstyle}{
   language=Python,
   basicstyle=\small\ttfamily,
@@ -200,7 +206,6 @@
 
 \chapter*{Certificate}
 \thispagestyle{romanstyle}
-\addcontentsline{toc}{chapter}{Certificate}
 \begin{center}
     \textsc{\Large \textbf{B.M.S. COLLEGE OF ENGINEERING}}\\[0.1cm]
     \textsc{\large \textbf{(Autonomous College under VTU)}}\\[0.1cm]
@@ -251,7 +256,6 @@ Assistant Professor & Professor \& HOD & Principal \\
 \newpage
 \chapter*{Declaration}
 \thispagestyle{romanstyle}
-\addcontentsline{toc}{chapter}{Declaration}
 \begin{center}
     \textsc{\Large \textbf{B.M.S. COLLEGE OF ENGINEERING}}\\[0.2cm]
     \textsc{\large \textbf{(Autonomous College under VTU)}}\\[0.2cm]
@@ -371,9 +375,13 @@ Sr & Sample rate \\
 
 \chapter{Introduction}
 \section{Background}
-Carnatic music is a highly structured melodic system where every performance is anchored to a performer-specific tonic Sa. All other swaras are defined as ratios relative to the tonic, and raga identity is governed by strict grammar rules in ascending and descending motion. For student practice, feedback is typically provided by a teacher who listens for microtonal deviations and forbidden notes. This process is time-consuming and subjective, and it becomes difficult to scale for continuous solo practice. A real-time assistant that can lock the tonic, track pitch accurately, and validate raga grammar can significantly improve the quality and consistency of training.
+In Carnatic music, every performance is based on a performer-specific tonic Sa, with all other swaras defined relative to it. Each raga follows strict rules, and even small pitch deviations or incorrect notes can affect its identity.
 
-Modern raga recognition systems focus on classification using audio features and deep learning models, but they often ignore microtonal deviations and do not provide immediate, actionable feedback. Furthermore, tonic detection is typically treated as a preprocessing step rather than a first-class problem. In this project, tonic detection and grammar validation are central, enabling both accurate swara mapping and rule-based feedback. The result is an automated music teacher that assists students in maintaining pitch fidelity and raga correctness during live singing.
+Traditionally, students learned under close guidance in a gurukula-style system. However, in today’s world, such continuous mentorship is not always feasible, and students often practice alone. This makes it difficult to detect mistakes like pitch inaccuracies and violations of raga grammar, leading to inconsistent learning.
+
+Existing raga recognition systems mainly focus on classification after performance and do not provide real-time feedback or handle microtonal precision effectively. They also treat tonic detection as a secondary step.
+
+This project addresses these gaps by building a real-time assistant that prioritizes tonic detection, tracks pitch accurately, and validates raga grammar. It acts as an automated practice companion, helping students improve pitch fidelity and maintain raga correctness during practice.
 
 \section{Objectives}
 \begin{enumerate}
@@ -447,27 +455,52 @@ Current raga systems share several key gaps relative to the requirements of a re
 \centering
 \caption{Summary of key literature and relevance to this work}
 \label{tab:lit-summary}
+\setlength{\arrayrulewidth}{0.4pt}
+\renewcommand{\arraystretch}{1.35}
 \small
-\begin{tabular}{|l|p{3cm}|p{5cm}|}
-\hline
-\textbf{Reference} & \textbf{Focus} & \textbf{Relevance to this work} \\
-\hline
-\cite{hebbar2023comparison} & CNN on Mel-spectrograms (98.1\% on CMD-40) & Confirms spectral features are discriminative; motivates our spectral tonic scorer \\
-\cite{krishnaswamy2018application} & Carnatic F0 via STFT & Establishes tonic-relative pitch extraction as a prerequisite \\
-\cite{peri2023applying} & NLP-style hierarchical attention on raga sequences & Motivates grammar-aware sequence validation \\
-\cite{natesan2020carnatic} & TDNN+LSTM+attention (95.31\% on 172 ragas) & Supports temporal phrase modeling in FSM \\
-\cite{arxiv2022carnatic} & Stacked ensemble feature fusion & Motivates Carnatic HPS cross-validation ensemble \\
-\cite{ic2021comparative} & Classifier benchmarks for raga & Confirms feasibility of sub-50ms processing \\
-\cite{ieee2022deep} & DCNN spectral feature learning & Demonstrates deep feature hierarchies for raga \\
-\cite{ismir2023explainable} & XAI for raga (ISMIR 2023) & Motivates transparent, teacher-like feedback \\
-\cite{jasi2021investigation} & Acoustic pitch distribution study & Informs vivaadi swara definitions \\
-\cite{ismir2020melody} & Real-time polyphonic melody extraction & Confirms sub-50ms latency is achievable \\
-\cite{ijca2015phrase} & Pitch distribution phrase analysis & Precursor to prayoga phrase buffer \\
-\cite{ncc2022raga} & t-SNE raga space visualization & Grounds 22-shruti quantization mathematically \\
-\cite{ieee2021self} & Self-extracting adaptive feature maps & Motivates median-spectrum robust scoring \\
-\cite{icassp2019singing} & Vocal separation + pitch (30--40ms) & Confirms real-time pitch extraction latency \\
-\cite{prl2021vector} & Vector space 22-shruti model (88$\to$94\%) & Core foundation for cent-deviation swara mapping \\
-\hline
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}
+                >{\raggedright\arraybackslash}p{3.6cm}
+                >{\raggedright\arraybackslash}p{6.4cm}}
+\arrayrulecolor{tableheadbg}
+\toprule
+\rowcolor{tableheadbg}
+\textcolor{white}{\textbf{Reference}} &
+\textcolor{white}{\textbf{Focus}} &
+\textcolor{white}{\textbf{Relevance to this work}} \\
+\midrule
+\arrayrulecolor{black!15}
+\rowcolor{tablerowA}
+\cite{hebbar2023comparison} Hebbar \& Jagtap & CNN on Mel-spectrograms (98.1\% on CMD-40) & Confirms spectral features are discriminative; motivates our spectral tonic scorer \\
+\rowcolor{tablerowB}
+\cite{krishnaswamy2018application} Krishnaswamy & Carnatic F0 via STFT & Establishes tonic-relative pitch extraction as a prerequisite \\
+\rowcolor{tablerowA}
+\cite{peri2023applying} Peri & NLP-style hierarchical attention on raga sequences & Motivates grammar-aware sequence validation \\
+\rowcolor{tablerowB}
+\cite{natesan2020carnatic} Natesan \& Beigi & TDNN+LSTM+attention (95.31\% on 172 ragas) & Supports temporal phrase modeling in FSM \\
+\rowcolor{tablerowA}
+\cite{arxiv2022carnatic} Stacked ensemble & Multi-modal feature fusion & Motivates Carnatic HPS cross-validation ensemble \\
+\rowcolor{tablerowB}
+\cite{ic2021comparative} ICIDS 2021 & Classifier benchmarks for raga & Confirms feasibility of sub-50\,ms processing \\
+\rowcolor{tablerowA}
+\cite{ieee2022deep} IEEE Trans.\ Multimedia & DCNN spectral feature learning & Demonstrates deep feature hierarchies for raga \\
+\rowcolor{tablerowB}
+\cite{ismir2023explainable} ISMIR 2023 & XAI for raga identification & Motivates transparent, teacher-like feedback \\
+\rowcolor{tablerowA}
+\cite{jasi2021investigation} JASI 2021 & Acoustic pitch distribution study & Informs vivaadi swara definitions \\
+\rowcolor{tablerowB}
+\cite{ismir2020melody} ISMIR 2020 & Real-time polyphonic melody extraction & Confirms sub-50\,ms latency is achievable \\
+\rowcolor{tablerowA}
+\cite{ijca2015phrase} IJCA 2015 & Pitch distribution phrase analysis & Precursor to prayoga phrase buffer \\
+\rowcolor{tablerowB}
+\cite{ncc2022raga} NCC 2022 & t-SNE raga space visualization & Grounds 22-shruti quantization mathematically \\
+\rowcolor{tablerowA}
+\cite{ieee2021self} IEEE Sig.\ Proc.\ Lett. & Self-extracting adaptive feature maps & Motivates median-spectrum robust scoring \\
+\rowcolor{tablerowB}
+\cite{icassp2019singing} ICASSP 2019 & Vocal separation + pitch (30--40\,ms) & Confirms real-time pitch extraction latency \\
+\rowcolor{tablerowA}
+\cite{prl2021vector} Pattern Recog.\ Lett. & Vector space 22-shruti model (88$\to$94\%) & Core foundation for cent-deviation swara mapping \\
+\arrayrulecolor{tableheadbg}
+\bottomrule
 \end{tabular}
 \end{table}
 
@@ -527,8 +560,7 @@ The scoring function in log domain is
 \log \text{score}(f) = \sum_{i=1}^{6} w_i \log S(f \cdot r_i)
 \label{eq:hps}
 \end{equation}
-where $S(\cdot)$ is the median STFT magnitude spectrum across all bootstrap frames, 
-$r_i \in \{1, 1.5, 2, 3, 4, 5\}$ are the Carnatic harmonic ratios, and $w_i \in \{0.3, 1.0, 0.8, 0.5, 0.3, 0.2\}$ are empirically determined weights. Using the median spectrum rather than the mean suppresses transient vocal attacks and percussion hits, exposing the persistent tambura drone. Computing in log domain converts the multiplicative product to a numerically stable sum.
+where $S(\cdot)$ is the median STFT magnitude spectrum across all bootstrap frames, $r_i \in \{1, 1.5, 2, 3, 4, 5\}$ are the Carnatic harmonic ratios, and $w_i \in \{0.3, 1.0, 0.8, 0.5, 0.3, 0.2\}$ are empirically determined weights. Using the median spectrum rather than the mean suppresses transient vocal attacks and percussion hits, exposing the persistent tambura drone. Computing in log domain converts the multiplicative product to a numerically stable sum.
 
 The Pa weight of 1.0 is the highest because the tambura Pa string is often as loud as or louder than the Sa string, particularly in female vocal recordings where the fundamental can be weak. A coarse scan at 0.5\,Hz resolution over 80--300\,Hz (n\_fft = 8192) produces all candidates whose score exceeds 40\% of the maximum. The best candidate is then refined by a fine scan at 0.1\,Hz resolution over a $\pm$5\,Hz window (n\_fft = 16384), enabling sub-cent precision.
 
@@ -603,18 +635,40 @@ where $o_i$ is the octave and $c_{s_i}$ is the cent value of swara $s_i$. This c
 \centering
 \caption{Project timeline and milestones}
 \label{tab:gantt}
-\begin{tabular}{|l|l|l|}
-\hline
-\textbf{Phase} & \textbf{Duration} & \textbf{Milestone} \\
-\hline
-Literature review & Aug--Sep 2025 & Survey and gap analysis \\
-Algorithm design & Sep--Oct 2025 & Tonic detection and swara mapping \\
-Core implementation & Oct 2025 & HPS ensemble and swara quantizer \\
-FSM and grammar & Oct--Nov 2025 & Multi-phase validator complete \\
-UI integration & Nov 2025 & WebSocket dashboard live \\
-Testing and tuning & Nov 2025 & All test suites pass \\
-Thesis writing & Nov--Dec 2025 & Final submission \\
-\hline
+\setlength{\arrayrulewidth}{0.4pt}
+\renewcommand{\arraystretch}{1.35}
+\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{4.2cm}
+                >{\centering\arraybackslash}p{3.2cm}
+                >{\raggedright\arraybackslash}p{5.8cm}}
+\arrayrulecolor{tableheadbg}
+\toprule
+\rowcolor{tableheadbg}
+\textcolor{white}{\textbf{Phase}} &
+\textcolor{white}{\textbf{Duration}} &
+\textcolor{white}{\textbf{Milestone}} \\
+\midrule
+\arrayrulecolor{black!15}
+\rowcolor{tablerowA}
+Literature review        & Oct--Nov 2025    & Survey and gap analysis complete \\
+\rowcolor{tablerowB}
+Algorithm design         & Nov--Dec 2025    & Tonic detection and swara mapping designed \\
+\rowcolor{tablerowA}
+Core implementation      & Jan 2026    & HPS ensemble and swara quantizer built \\
+\rowcolor{tablerowB}
+FSM and grammar          & Jan--Feb 2026    & Multi-phase validator complete \\
+\rowcolor{tablerowA}
+UI integration           & Mar 2026    & WebSocket dashboard live \\
+\rowcolor{tablerowB}
+Testing and tuning       & Mar 2026    & All test suites pass \\
+\rowcolor{tablerowA}
+Thesis writing           & Apr 2026    & Draft chapters submitted to supervisor \\
+\rowcolor{tablerowB}
+Review and corrections   & Apr 2026           & Supervisor feedback incorporated \\
+\rowcolor{tablerowA}
+Final submission         & May 2026           & Hard copy and USB submitted \\
+\arrayrulecolor{tableheadbg}
+\bottomrule
 \end{tabular}
 \end{table}
 
@@ -730,85 +784,92 @@ The implementation is organized into six Python modules. Each module has a singl
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  node distance    = 0.5cm and 0.6cm,
-  %--- style definitions ---
+  node distance    = 0.55cm and 0.7cm,
   layer/.style     = {rectangle, rounded corners=4pt, draw=#1!70!black,
-                      fill=#1!18, minimum width=2.6cm, minimum height=0.85cm,
+                      fill=#1!18, minimum width=3.2cm, minimum height=0.85cm,
                       align=center, font=\small\bfseries, drop shadow},
   module/.style    = {rectangle, rounded corners=3pt, draw=#1!80!black,
-                      fill=#1!25, minimum width=2.6cm, minimum height=0.78cm,
+                      fill=#1!25, minimum width=3.2cm, minimum height=0.85cm,
                       align=center, font=\small\ttfamily},
   sublabel/.style  = {font=\scriptsize\itshape, text=black!55},
   arrow/.style     = {-{Stealth[length=5pt,width=4pt]}, thick, color=black!65},
   darrow/.style    = {-{Stealth[length=5pt,width=4pt]}, thick, dashed, color=black!45},
   groupbox/.style  = {rectangle, rounded corners=5pt, draw=#1!60, fill=#1!5,
-                      dashed, inner sep=8pt},
+                      dashed, inner sep=10pt},
 ]
 
 %% ── ROW 1 : INPUT ──────────────────────────────────────────────────────────
-\node[layer=gray]  (mic)    {Microphone \\ \small (Browser / Desktop)};
+\node[layer=gray] (mic)
+      {Microphone \\ \small (Browser / Desktop)};
 
 %% ── ROW 2 : AUDIO LAYER ────────────────────────────────────────────────────
-\node[module=teal, below=0.55cm of mic]  (lap)
+\node[module=teal, below=of mic] (lap)
       {\texttt{live\_audio\_processor.py} \\ \scriptsize PCM ingest · resampling · slope gate};
 
 %% ── ROW 3 : PIPELINE LAYER ─────────────────────────────────────────────────
-\node[module=blue, below=0.55cm of lap]  (pip)
+\node[module=blue, below=of lap] (pip)
       {\texttt{pitch\_pipeline.py} \\ \scriptsize frame coordinator · bootstrap buffer};
 
-%% ── ROW 4 : THREE PARALLEL MODULES ────────────────────────────────────────
-\node[module=orange, below left=0.55cm and 2.8cm of pip]  (tsa)
+%% ── ROW 4 : THREE PARALLEL MODULES (wider spread to avoid collision) ───────
+\node[module=orange, below left=0.55cm and 4.2cm of pip]  (tsa)
       {\texttt{tonic\_sa\_detection.py} \\ \scriptsize Carnatic HPS ensemble \\ \scriptsize cross-validation};
-\node[module=violet, below=0.55cm of pip]                  (swq)
+\node[module=violet, below=0.55cm of pip] (swq)
       {\texttt{swara\_quantizer.py} \\ \scriptsize just-intonation ratios \\ \scriptsize octave folding · confidence};
-\node[module=green!60!black, below right=0.55cm and 2.8cm of pip]  (gv)
+\node[module=green!60!black, below right=0.55cm and 4.2cm of pip] (gv)
       {\texttt{grammar\_validator.py} \\ \scriptsize 5-phase FSM \\ \scriptsize varja · vakra · prayoga};
 
+%% ── RAGA DATABASE : placed to the right of gv with generous gap ────────────
+\node[module=yellow!70!black, right=2.0cm of gv] (rdb)
+      {\texttt{raga\_database.py} \\ \scriptsize arohana · avarohana \\ \scriptsize varja · prayoga records};
+
 %% ── ROW 5 : FEEDBACK GENERATOR ────────────────────────────────────────────
-\node[module=red!70!black, below=0.55cm of swq]  (fg)
+\node[module=red!70!black, below=0.55cm of swq] (fg)
       {\texttt{feedback\_generator.py} \\ \scriptsize multi-language templates \\ \scriptsize debounce · alert dispatch};
 
 %% ── ROW 6 : WEB LAYER ──────────────────────────────────────────────────────
-\node[module=teal!60!black, below=0.55cm of fg]  (web)
+\node[module=teal!60!black, below=of fg] (web)
       {\texttt{web/app.py} \\ \scriptsize FastAPI · WebSocket server};
 
 %% ── ROW 7 : OUTPUT ─────────────────────────────────────────────────────────
-\node[layer=gray, below=0.55cm of web]  (ui)
+\node[layer=gray, below=of web] (ui)
       {Browser Dashboard \\ \small \texttt{web/static/index.html}};
 
-%% ── RAGA DATABASE (side) ───────────────────────────────────────────────────
-\node[module=yellow!70!black, right=1.8cm of swq]  (rdb)
-      {\texttt{raga\_database.py} \\ \scriptsize arohana · avarohana \\ \scriptsize varja · prayoga records};
-
-%% ── ARROWS ─────────────────────────────────────────────────────────────────
-\draw[arrow] (mic) -- node[right, sublabel]{PCM audio} (lap);
+%% ── ARROWS : vertical spine ─────────────────────────────────────────────────
+\draw[arrow] (mic) -- node[right, sublabel]{PCM audio}    (lap);
 \draw[arrow] (lap) -- node[right, sublabel]{framed audio} (pip);
 
-% pip -> three parallel modules
+%% pip -> three parallel modules (fan-out)
 \draw[arrow] (pip.south) -- ++(0,-0.22) -| (tsa.north);
 \draw[arrow] (pip.south) -- (swq.north);
 \draw[arrow] (pip.south) -- ++(0,-0.22) -| (gv.north);
 
-% tonic feeds into quantizer
+%% tonic -> quantizer
 \draw[arrow] (tsa.east) -- node[above, sublabel]{$f_{Sa}$} (swq.west);
 
-% quantizer -> grammar validator
+%% quantizer -> grammar validator
 \draw[arrow] (swq.east) -- node[above, sublabel]{swara} (gv.west);
 
-% both swq and gv feed feedback generator
+%% swq + gv -> feedback generator (fan-in)
 \draw[arrow] (swq.south) -- ++(0,-0.22) -| (fg.north);
 \draw[arrow] (gv.south)  -- ++(0,-0.22) -| (fg.north);
 
 \draw[arrow] (fg)  -- node[right, sublabel]{JSON events} (web);
-\draw[arrow] (web) -- node[right, sublabel]{WebSocket} (ui);
+\draw[arrow] (web) -- node[right, sublabel]{WebSocket}   (ui);
 
-% raga DB
-\draw[darrow] (rdb.west) -- node[above, sublabel]{rules} (gv.east);
-\draw[darrow] (rdb.south) -- ++(0,-0.3) -| (swq.east);
+%% raga DB -> grammar validator (straight horizontal from left side of rdb)
+\draw[darrow] (rdb.west) -- node[above, sublabel]{grammar rules} (gv.east);
+
+%% raga DB -> swara quantizer (drops south, goes left past gv, hooks into swq.east)
+\draw[darrow] (rdb.south) -- ++(0,-0.5)
+              -- ($ (swq.east) + (2.0cm+1.6cm, -0.5cm) $)
+              -- ($ (swq.east) + (2.0cm+1.6cm, 0) $)
+              -- node[above, sublabel]{scale ratios} (swq.east);
 
 %% ── GROUP BOX : Core DSP ───────────────────────────────────────────────────
 \begin{scope}[on background layer]
-  \node[groupbox=blue, fit=(tsa)(swq)(gv), label={[font=\scriptsize\bfseries, text=blue!70]above:Core DSP Layer}] {};
+  \node[groupbox=blue,
+        fit=(tsa)(swq)(gv),
+        label={[font=\scriptsize\bfseries, text=blue!70]above:Core DSP Layer}] {};
 \end{scope}
 
 \end{tikzpicture}%
