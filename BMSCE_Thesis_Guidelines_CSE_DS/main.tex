@@ -24,6 +24,7 @@
 \usepackage{datetime}
 \usepackage[backend=bibtex,style=ieee,sorting=none]{biblatex}
 \usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds, shadows.blur}
 \usepackage{eso-pic}
 \usepackage{listings}
 \lstdefinestyle{pythonstyle}{
@@ -484,9 +485,34 @@ The system is organized as a five-stage streaming pipeline, each stage operating
 
 \begin{figure}[htbp]
 \centering
-\fbox{\parbox{0.9\textwidth}{
-\textbf{Microphone} $\to$ \textbf{Bootstrap (1 s)} $\to$ \textbf{Tonic Sa Locked} $\to$ \textbf{pYIN Pitch (23 ms)} $\to$ \textbf{Smoothing} $\to$ \textbf{Swara Quantizer} $\to$ \textbf{Grammar FSM} $\to$ \textbf{Debouncer} $\to$ \textbf{Feedback UI (WebSocket)}
-}}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance = 0.45cm and 0.35cm,
+  stage/.style  = {rectangle, rounded corners=3pt, draw=black!60, fill=blue!10,
+                   text width=1.6cm, minimum height=0.82cm, align=center,
+                   font=\footnotesize\bfseries, drop shadow},
+  arrow/.style  = {-{Stealth[length=5pt]}, thick, color=black!70},
+]
+  \node[stage] (mic)    {Micro-\\phone};
+  \node[stage, right=of mic]    (boot)   {Bootstrap\\(1\,s)};
+  \node[stage, right=of boot]   (tonic)  {Tonic\\Sa\\Locked};
+  \node[stage, right=of tonic]  (pyin)   {pYIN\\Pitch\\(23\,ms)};
+  \node[stage, right=of pyin]   (smooth) {Temporal\\Smoothing};
+  \node[stage, right=of smooth] (quant)  {Swara\\Quantizer};
+  \node[stage, right=of quant]  (fsm)    {Grammar\\FSM};
+  \node[stage, right=of fsm]    (deb)    {Debouncer};
+  \node[stage, right=of deb]    (ui)     {Feedback\\UI\\(WebSocket)};
+
+  \draw[arrow] (mic)    -- (boot);
+  \draw[arrow] (boot)   -- (tonic);
+  \draw[arrow] (tonic)  -- (pyin);
+  \draw[arrow] (pyin)   -- (smooth);
+  \draw[arrow] (smooth) -- (quant);
+  \draw[arrow] (quant)  -- (fsm);
+  \draw[arrow] (fsm)    -- (deb);
+  \draw[arrow] (deb)    -- (ui);
+\end{tikzpicture}%
+}
 \caption{High-level system architecture for real-time raga practice feedback}
 \label{fig:system-architecture}
 \end{figure}
@@ -501,7 +527,8 @@ The scoring function in log domain is
 \log \text{score}(f) = \sum_{i=1}^{6} w_i \log S(f \cdot r_i)
 \label{eq:hps}
 \end{equation}
-where $S(\cdot)$ is the median STFT magnitude spectrum across all bootstrap frames, $r_i \in \{1.0, 1.5, 2.0, 3.0, 4.0, 5.0\}$ are the Carnatic harmonic ratios, and $w_i \in \{0.3, 1.0, 0.8, 0.5, 0.3, 0.2\}$ are empirically determined weights. Using the median spectrum rather than the mean suppresses transient vocal attacks and percussion hits, exposing the persistent tambura drone. Computing in log domain converts the multiplicative product to a numerically stable sum.
+where $S(\cdot)$ is the median STFT magnitude spectrum across all bootstrap frames, 
+$r_i \in \{1, 1.5, 2, 3, 4, 5\}$ are the Carnatic harmonic ratios, and $w_i \in \{0.3, 1.0, 0.8, 0.5, 0.3, 0.2\}$ are empirically determined weights. Using the median spectrum rather than the mean suppresses transient vocal attacks and percussion hits, exposing the persistent tambura drone. Computing in log domain converts the multiplicative product to a numerically stable sum.
 
 The Pa weight of 1.0 is the highest because the tambura Pa string is often as loud as or louder than the Sa string, particularly in female vocal recordings where the fundamental can be weak. A coarse scan at 0.5\,Hz resolution over 80--300\,Hz (n\_fft = 8192) produces all candidates whose score exceeds 40\% of the maximum. The best candidate is then refined by a fine scan at 0.1\,Hz resolution over a $\pm$5\,Hz window (n\_fft = 16384), enabling sub-cent precision.
 
@@ -687,15 +714,106 @@ The implementation follows a deterministic, modular pipeline organized into six 
 \end{algorithm}
 
 \section{Module Structure and Integration}
-The implementation is organized as follows. \texttt{tonic\_sa\_detection.py} contains the \texttt{TonicSaDetector} class implementing the Carnatic HPS ensemble. \texttt{raga\_grammar/swara\_quantizer.py} provides the \texttt{SwaraQuantizer} class with octave folding and confidence scoring. \texttt{raga\_grammar/pitch\_pipeline.py} hosts \texttt{RealTimeGrammarPipeline}, the main streaming coordinator. \texttt{raga\_grammar/grammar\_validator.py} implements \texttt{RagaGrammarValidator} with all five FSM phases. \texttt{raga\_grammar/live\_audio\_processor.py} handles debouncing, session state, and alert dispatch. \texttt{web/app.py} provides the FastAPI server with WebSocket streaming.
+The implementation is organized into six Python modules. Each module has a single responsibility within the pipeline:
+
+\begin{description}
+  \setlength{\itemsep}{2pt}
+  \item[\texttt{tonic\_sa\_detection.py}] Contains the \texttt{TonicSaDetector} class implementing the Carnatic HPS ensemble with coarse-to-fine scanning and cross-validation.
+  \item[\texttt{raga\_grammar/swara\_quantizer.py}] Provides the \texttt{SwaraQuantizer} class with just-intonation ratio mapping, octave folding, and confidence scoring.
+  \item[\texttt{raga\_grammar/pitch\_pipeline.py}] Hosts \texttt{RealTimeGrammarPipeline}, the main streaming coordinator that sequences all processing stages per frame.
+  \item[\texttt{raga\_grammar/grammar\_validator.py}] Implements \texttt{RagaGrammarValidator} with all five FSM phases: varja checks, direction tracking, vakra detection, prayoga recognition, and feedback generation.
+  \item[\texttt{raga\_grammar/live\_audio\_processor.py}] Handles debouncing, slope-gate logic, session state, and alert dispatch to the WebSocket layer.
+  \item[\texttt{web/app.py}] Provides the FastAPI server with WebSocket streaming for live event delivery to the browser dashboard.
+\end{description}
 
 \begin{figure}[htbp]
 \centering
-\fbox{\parbox{0.9\textwidth}{
-\small
-Microphone $\to$ \texttt{live\_audio\_processor.py} $\to$ \texttt{pitch\_pipeline.py} $\to$ \texttt{swara\_quantizer.py} $\to$ \texttt{grammar\_validator.py} $\to$ \texttt{feedback\_generator.py} $\to$ \texttt{web/app.py} (WebSocket) $\to$ \texttt{web/static/index.html}
-}}
-\caption{Module integration and data flow}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance    = 0.5cm and 0.6cm,
+  %--- style definitions ---
+  layer/.style     = {rectangle, rounded corners=4pt, draw=#1!70!black,
+                      fill=#1!18, minimum width=2.6cm, minimum height=0.85cm,
+                      align=center, font=\small\bfseries, drop shadow},
+  module/.style    = {rectangle, rounded corners=3pt, draw=#1!80!black,
+                      fill=#1!25, minimum width=2.6cm, minimum height=0.78cm,
+                      align=center, font=\small\ttfamily},
+  sublabel/.style  = {font=\scriptsize\itshape, text=black!55},
+  arrow/.style     = {-{Stealth[length=5pt,width=4pt]}, thick, color=black!65},
+  darrow/.style    = {-{Stealth[length=5pt,width=4pt]}, thick, dashed, color=black!45},
+  groupbox/.style  = {rectangle, rounded corners=5pt, draw=#1!60, fill=#1!5,
+                      dashed, inner sep=8pt},
+]
+
+%% ── ROW 1 : INPUT ──────────────────────────────────────────────────────────
+\node[layer=gray]  (mic)    {Microphone \\ \small (Browser / Desktop)};
+
+%% ── ROW 2 : AUDIO LAYER ────────────────────────────────────────────────────
+\node[module=teal, below=0.55cm of mic]  (lap)
+      {\texttt{live\_audio\_processor.py} \\ \scriptsize PCM ingest · resampling · slope gate};
+
+%% ── ROW 3 : PIPELINE LAYER ─────────────────────────────────────────────────
+\node[module=blue, below=0.55cm of lap]  (pip)
+      {\texttt{pitch\_pipeline.py} \\ \scriptsize frame coordinator · bootstrap buffer};
+
+%% ── ROW 4 : THREE PARALLEL MODULES ────────────────────────────────────────
+\node[module=orange, below left=0.55cm and 2.8cm of pip]  (tsa)
+      {\texttt{tonic\_sa\_detection.py} \\ \scriptsize Carnatic HPS ensemble \\ \scriptsize cross-validation};
+\node[module=violet, below=0.55cm of pip]                  (swq)
+      {\texttt{swara\_quantizer.py} \\ \scriptsize just-intonation ratios \\ \scriptsize octave folding · confidence};
+\node[module=green!60!black, below right=0.55cm and 2.8cm of pip]  (gv)
+      {\texttt{grammar\_validator.py} \\ \scriptsize 5-phase FSM \\ \scriptsize varja · vakra · prayoga};
+
+%% ── ROW 5 : FEEDBACK GENERATOR ────────────────────────────────────────────
+\node[module=red!70!black, below=0.55cm of swq]  (fg)
+      {\texttt{feedback\_generator.py} \\ \scriptsize multi-language templates \\ \scriptsize debounce · alert dispatch};
+
+%% ── ROW 6 : WEB LAYER ──────────────────────────────────────────────────────
+\node[module=teal!60!black, below=0.55cm of fg]  (web)
+      {\texttt{web/app.py} \\ \scriptsize FastAPI · WebSocket server};
+
+%% ── ROW 7 : OUTPUT ─────────────────────────────────────────────────────────
+\node[layer=gray, below=0.55cm of web]  (ui)
+      {Browser Dashboard \\ \small \texttt{web/static/index.html}};
+
+%% ── RAGA DATABASE (side) ───────────────────────────────────────────────────
+\node[module=yellow!70!black, right=1.8cm of swq]  (rdb)
+      {\texttt{raga\_database.py} \\ \scriptsize arohana · avarohana \\ \scriptsize varja · prayoga records};
+
+%% ── ARROWS ─────────────────────────────────────────────────────────────────
+\draw[arrow] (mic) -- node[right, sublabel]{PCM audio} (lap);
+\draw[arrow] (lap) -- node[right, sublabel]{framed audio} (pip);
+
+% pip -> three parallel modules
+\draw[arrow] (pip.south) -- ++(0,-0.22) -| (tsa.north);
+\draw[arrow] (pip.south) -- (swq.north);
+\draw[arrow] (pip.south) -- ++(0,-0.22) -| (gv.north);
+
+% tonic feeds into quantizer
+\draw[arrow] (tsa.east) -- node[above, sublabel]{$f_{Sa}$} (swq.west);
+
+% quantizer -> grammar validator
+\draw[arrow] (swq.east) -- node[above, sublabel]{swara} (gv.west);
+
+% both swq and gv feed feedback generator
+\draw[arrow] (swq.south) -- ++(0,-0.22) -| (fg.north);
+\draw[arrow] (gv.south)  -- ++(0,-0.22) -| (fg.north);
+
+\draw[arrow] (fg)  -- node[right, sublabel]{JSON events} (web);
+\draw[arrow] (web) -- node[right, sublabel]{WebSocket} (ui);
+
+% raga DB
+\draw[darrow] (rdb.west) -- node[above, sublabel]{rules} (gv.east);
+\draw[darrow] (rdb.south) -- ++(0,-0.3) -| (swq.east);
+
+%% ── GROUP BOX : Core DSP ───────────────────────────────────────────────────
+\begin{scope}[on background layer]
+  \node[groupbox=blue, fit=(tsa)(swq)(gv), label={[font=\scriptsize\bfseries, text=blue!70]above:Core DSP Layer}] {};
+\end{scope}
+
+\end{tikzpicture}%
+}
+\caption{Module integration and data-flow architecture}
 \label{fig:integration}
 \end{figure}
 
@@ -741,15 +859,16 @@ The Carnatic HPS ensemble was evaluated on three benchmark recordings with groun
 \centering
 \caption{Tonic Sa detection accuracy on benchmark recordings}
 \label{tab:tonic-results}
-\begin{tabular}{|l|l|l|l|l|l|}
+\small
+\begin{tabular}{|l|c|c|c|c|c|}
 \hline
-\textbf{Recording} & \textbf{Duration} & \textbf{GT (Hz)} & \textbf{Detected (Hz)} & \textbf{Error (Hz)} & \textbf{Error (\%)} \\
+\textbf{Recording} & \textbf{Duration} & \textbf{GT (Hz)} & \textbf{Det. (Hz)} & \textbf{Err (Hz)} & \textbf{Err (\%)} \\
 \hline
-Enadu\_Ullame & $\sim$5 min & 124.19 & 123.50 & 0.69 & 0.55 \\
-Valli\_Kanavan & $\sim$5 min & 174.61 & 173.90 & 0.71 & 0.41 \\
-Pazhani\_Shanmuga & $\sim$3 min & 170.63 & 174.70 & 4.07 & 2.39 \\
+Enadu\_Ullame      & $\sim$5 min & 124.19 & 123.50 & 0.69 & 0.55 \\
+Valli\_Kanavan     & $\sim$5 min & 174.61 & 173.90 & 0.71 & 0.41 \\
+Pazhani\_Shanmuga  & $\sim$3 min & 170.63 & 174.70 & 4.07 & 2.39 \\
 \hline
-\textbf{Average} & & & & \textbf{1.82} & \textbf{1.45} \\
+\textbf{Average}   &             &        &        & \textbf{1.82} & \textbf{1.45} \\
 \hline
 \end{tabular}
 \end{table}
@@ -796,20 +915,21 @@ Table~\ref{tab:compare} summarizes qualitative differences between this work and
 \centering
 \caption{Qualitative comparison with prior approaches}
 \label{tab:compare}
+\small
 \begin{tabular}{|l|c|c|c|}
 \hline
-\textbf{Feature} & \textbf{This Work} & \textbf{Deep Classifiers} & \textbf{Statistical Methods} \\
+\textbf{Feature} & \textbf{This Work} & \textbf{Deep Classifiers} & \textbf{Statistical} \\
 \hline
-Real-time streaming & Yes & No & No \\
-Explicit grammar validation & Yes & No & Partial \\
-Microtonal tolerance control & Yes & No & Partial \\
-Explainable per-note feedback & Yes & Limited & Limited \\
-Tonic-first design & Yes & No & Partial \\
-Vakra phrase detection & Yes & No & No \\
-Prayoga recognition & Yes & No & No \\
-Multi-language feedback & Yes & No & No \\
-Latency & $\sim$70\,ms & Offline & Offline \\
-Training data required & No & Yes & No \\
+Real-time streaming          & Yes       & No      & No \\
+Explicit grammar validation  & Yes       & No      & Partial \\
+Microtonal tolerance control & Yes       & No      & Partial \\
+Explainable per-note feedback& Yes       & Limited & Limited \\
+Tonic-first design           & Yes       & No      & Partial \\
+Vakra phrase detection       & Yes       & No      & No \\
+Prayoga recognition          & Yes       & No      & No \\
+Multi-language feedback      & Yes       & No      & No \\
+Latency                      & $\sim$70\,ms & Offline & Offline \\
+Training data required       & No        & Yes     & No \\
 \hline
 \end{tabular}
 \end{table}
