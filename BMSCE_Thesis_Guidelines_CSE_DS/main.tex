@@ -13,7 +13,6 @@
 \usepackage{tabularx}
 \usepackage{longtable}
 \usepackage{float}
-\usepackage{listings}
 \usepackage{xcolor}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
@@ -23,15 +22,51 @@
 \usepackage{ragged2e}
 \usepackage{etoolbox}
 \usepackage{datetime}
-\usepackage[backend=biber,style=numeric-comp,sorting=none]{biblatex}
+\usepackage[backend=bibtex,style=ieee,sorting=none]{biblatex}
+\usepackage{tikz}
+\usepackage{eso-pic}
+\usepackage{listings}
+\lstdefinestyle{pythonstyle}{
+  language=Python,
+  basicstyle=\small\ttfamily,
+  keywordstyle=\bfseries\color[RGB]{0,0,180},
+  stringstyle=\color[RGB]{163,21,21},
+  commentstyle=\itshape\color[RGB]{60,120,60},
+  numberstyle=\tiny\color[RGB]{120,120,120},
+  numbers=left,
+  numbersep=8pt,
+  stepnumber=1,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=flexible,
+  keepspaces=true,
+  showstringspaces=false,
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color[RGB]{180,180,180},
+  backgroundcolor=\color[RGB]{248,248,252},
+  xleftmargin=20pt,
+  xrightmargin=0pt,
+  tabsize=4,
+  captionpos=t,
+  aboveskip=8pt,
+  belowskip=8pt,
+}
+\lstset{style=pythonstyle}
 
-\geometry{a4paper, left=1in, right=1in, top=1in, bottom=1in}
+% Page geometry with extra bottom margin for footer
+\geometry{a4paper, left=1in, right=1in, top=1in, bottom=1.2in}
 \setlength{\headheight}{27.12pt}
 
-\definecolor{codegray}{rgb}{0.5,0.5,0.5}
-\definecolor{codegreen}{rgb}{0,0.6,0}
-\definecolor{codeblue}{rgb}{0,0,0.8}
-\definecolor{backcolor}{rgb}{0.95,0.95,0.92}
+% --- Page border on every page ---
+\AddToShipoutPictureBG{%
+  \begin{tikzpicture}[remember picture, overlay]
+    \draw[line width=1.5pt]
+      ([xshift=0.5in, yshift=-0.5in] current page.north west)
+      rectangle
+      ([xshift=-0.5in, yshift=0.5in] current page.south east);
+  \end{tikzpicture}%
+}
 
 \hypersetup{
     colorlinks=true,
@@ -39,26 +74,6 @@
     linkcolor=blue,
     urlcolor=blue
 }
-
-\lstdefinestyle{mystyle}{
-    backgroundcolor=\color{backcolor},
-    commentstyle=\color{codegreen},
-    keywordstyle=\color{codeblue},
-    numberstyle=\tiny\color{codegray},
-    stringstyle=\color{codegreen},
-    basicstyle=\ttfamily\footnotesize,
-    breakatwhitespace=false,
-    breaklines=true,
-    captionpos=b,
-    keepspaces=true,
-    numbers=left,
-    numbersep=5pt,
-    showspaces=false,
-    showstringspaces=false,
-    showtabs=false,
-    tabsize=2
-}
-\lstset{style=mystyle}
 
 \renewcommand{\algorithmicrequire}{\textbf{Input:}}
 \renewcommand{\algorithmicensure}{\textbf{Output:}}
@@ -95,18 +110,52 @@
 
 \fancypagestyle{romanstyle}{
   \fancyhf{}
-  \fancyfoot[C]{\roman{page}}
+  \fancyfoot[L]{\small Dept. of CSE (Data Science), BMSCE}
+  \fancyfoot[C]{\small 2025--2026}
+  \fancyfoot[R]{\small\roman{page}}
   \renewcommand{\headrulewidth}{0pt}
-  \renewcommand{\footrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0.4pt}
 }
 
 \fancypagestyle{mainstyle}{
   \fancyhf{}
-  \fancyhead[L]{\textbf{Robust Tonic Sa Detection and FSM-Based Raga Grammar Validation for Carnatic Practice}}
+  \fancyhead[L]{\small\textbf{Robust Tonic Sa Detection and FSM-Based Raga Grammar Validation}}
   \fancyfoot[L]{\small Dept. of CSE (Data Science), BMSCE}
   \fancyfoot[C]{\small 2025--2026}
   \fancyfoot[R]{\thepage}
   \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+
+% Redefine 'plain' for roman-numbered front matter pages
+\newcommand{\setplainstyle}[1]{%
+  \fancypagestyle{plain}{
+    \fancyhf{}
+    \fancyfoot[L]{\small Dept. of CSE (Data Science), BMSCE}
+    \fancyfoot[C]{\small 2025--2026}
+    \fancyfoot[R]{\small#1}
+    \renewcommand{\headrulewidth}{0pt}
+    \renewcommand{\footrulewidth}{0.4pt}
+  }
+}
+
+% Roman front matter plain style
+\fancypagestyle{plainroman}{
+  \fancyhf{}
+  \fancyfoot[L]{\small Dept. of CSE (Data Science), BMSCE}
+  \fancyfoot[C]{\small 2025--2026}
+  \fancyfoot[R]{\small\roman{page}}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+
+% Redefine 'plain' (used on chapter opening pages) to match mainstyle footer
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyfoot[L]{\small Dept. of CSE (Data Science), BMSCE}
+  \fancyfoot[C]{\small 2025--2026}
+  \fancyfoot[R]{\thepage}
+  \renewcommand{\headrulewidth}{0pt}
   \renewcommand{\footrulewidth}{0.4pt}
 }
 
@@ -120,16 +169,16 @@
         \textsc{\Large \textbf{B.M.S. COLLEGE OF ENGINEERING}}\\[0.2cm]
         \textsc{\large \textbf{(Autonomous College under VTU)}}\\[0.2cm]
         \textsc{\large \textbf{Bull Temple Road, Basavangudi, Bangalore - 560019}}\\[0.5cm]
-        
+
         \includegraphics[scale=0.75]{logo.png}\\[0.2cm]
         \textit{A thesis on}\\[0.2cm]
         \textsc{\textbf{Robust Tonic Sa Detection and FSM-Based Raga Grammar Validation for Carnatic Practice}}\\[0.2cm]
         \textit{in fulfillment of the requirements for the award of degree}\\[0.2cm]
-        
+
         \textbf{BACHELOR OF ENGINEERING}\\[0.15cm]
         \textit{in}\\[0.2cm]
         \textbf{Computer Science \& Engineering (Data Science)}\\[0.2cm]
-        
+
         \textit{by}\\[0.2cm]
         \textbf{G Shreekar (1BM23CD018)}\\[0.2cm]
         \textbf{H Sampreeth Bhat (1BM23CD020)}\\[0.2cm]
@@ -149,12 +198,13 @@
 \pagestyle{romanstyle}
 
 \chapter*{Certificate}
+\thispagestyle{romanstyle}
 \addcontentsline{toc}{chapter}{Certificate}
 \begin{center}
     \textsc{\Large \textbf{B.M.S. COLLEGE OF ENGINEERING}}\\[0.1cm]
     \textsc{\large \textbf{(Autonomous College under VTU)}}\\[0.1cm]
     \textsc{\large \textbf{Bull Temple Road, Basavangudi, Bangalore - 560019}}\\[0.4cm]
-    
+
     \includegraphics[scale=0.4]{logo.png}\\[0.1cm]
     \textbf{Department of Computer Science and Engineering (Data Science)}\\[0.1cm]
     \textbf{\Large \underline{CERTIFICATE}}\\[0.1cm]
@@ -193,12 +243,13 @@ Assistant Professor & Professor \& HOD & Principal \\
 \vspace{0.2cm}
 \noindent
 \textbf{Examiners}\\[0.1cm]
-\textbf{Name of Examiner} \hfill \textbf{Signature of the examiner} \\ [0.1cm]
-\textbf{1.} \hfill \rule{5cm}{0.4pt} \\ [0.1cm]
+\textbf{Name of Examiner} \hfill \textbf{Signature of the examiner} \\[0.1cm]
+\textbf{1.} \hfill \rule{5cm}{0.4pt} \\[0.1cm]
 \textbf{2.} \hfill \rule{5cm}{0.4pt} \\
 
 \newpage
 \chapter*{Declaration}
+\thispagestyle{romanstyle}
 \addcontentsline{toc}{chapter}{Declaration}
 \begin{center}
     \textsc{\Large \textbf{B.M.S. COLLEGE OF ENGINEERING}}\\[0.2cm]
@@ -241,6 +292,7 @@ We further declare that, to the best of our knowledge and belief, this thesis ha
 
 \newpage
 \chapter*{Acknowledgments}
+\thispagestyle{romanstyle}
 \addcontentsline{toc}{chapter}{Acknowledgments}
 \noindent
 We express our sincere gratitude to the management and faculty of B.M.S. College of Engineering for providing the resources and academic environment to complete this capstone project. We thank \textbf{Dr. Shambhavi B R} for her guidance, technical inputs, and continuous support. We also thank the Department of CSE (Data Science) for their feedback during the internal reviews and for enabling the infrastructure used for experiments and demonstrations.
@@ -254,6 +306,7 @@ R V Abhishek (1BM23CD047)\\
 
 \newpage
 \chapter*{Abstract}
+\thispagestyle{romanstyle}
 \addcontentsline{toc}{chapter}{Abstract}
 Carnatic music is one of the world's most precisely codified melodic systems, in which every note is defined as an exact frequency ratio relative to a performer-chosen tonic Sa, and raga identity is enforced by strict ascending (arohana) and descending (avarohana) grammar rules. Student practice traditionally relies on a teacher who listens for microtonal deviations and grammar violations in real time---a process that is subjective, time-intensive, and difficult to replicate at scale during unsupervised practice.
 
@@ -275,6 +328,7 @@ The system processes audio at approximately 35\,ms per frame and achieves end-to
 \listoffigures
 \newpage
 \chapter*{List of Abbreviations}
+\thispagestyle{romanstyle}
 \addcontentsline{toc}{chapter}{List of Abbreviations}
 \begin{tabularx}{\textwidth}{|l|X|}
 \hline
@@ -345,12 +399,20 @@ The IEEE Transactions on Multimedia study on deep learning-based classification 
 \section{Pitch Tracking for Carnatic Music}
 Krishnaswamy \cite{krishnaswamy2018application} addressed the fundamental challenge of pitch tracking in South Indian classical music using short-time Fourier transforms (STFT). Since Carnatic music uses a relative tonic rather than fixed Western pitches, standard pitch detectors fail to capture the required nuances. Krishnaswamy's framework establishes reliable fundamental frequency (F0) extraction as an absolute prerequisite for subsequent microtonal mapping---a principle adopted directly in this project's tonic-first pipeline design.
 
+Foundational pitch estimators such as YIN \cite{decheveigne2002yin} and pYIN \cite{mauch2014pyin} establish the robustness requirements for low-noise F0 tracking, while CREPE \cite{kim2018crepe} demonstrates that deep representations can also estimate pitch accurately in difficult acoustic conditions. For polyphonic melody extraction, Salamon and Gómez \cite{salamon2012melody} show how contour-based post-processing improves stability, and Bittner et al. \cite{bittner2017deepsalience} extend this idea with deep salience maps for polyphonic F0 estimation. These works collectively motivate the tonic-band restriction and temporal smoothing used in this thesis.
+
+In broader music information retrieval, Tzanetakis and Cook \cite{tzanetakis2002genre} and Klapuri and Davy \cite{klapuri2006signal} demonstrate that robust audio understanding requires carefully designed signal-processing stages before higher-level classification. Their findings support the decision to keep tonic detection and swara quantization deterministic rather than delegating the entire pipeline to an opaque classifier.
+
 The ISMIR 2020 work on melody extraction from polyphonic signals \cite{ismir2020melody} achieved real-time F0 tracking of lead melody against dense accompaniment using CNNs, demonstrating that low-latency melody isolation (under 50\,ms) is technically feasible. This project builds on that latency benchmark, using pYIN pitch tracking restricted to a tonic-relative band to achieve similar responsiveness without requiring a deep learning model.
 
 The ICASSP 2019 work on singing voice separation \cite{icassp2019singing} demonstrated vocal pitch extraction via deep neural networks and adaptive pitch tracking with 30--40\,ms latency, confirming that the sub-50\,ms real-time constraint targeted in this project is achievable. The system combines vocal isolation with pitch estimation, a concept adapted here as tonic-band restriction that eliminates non-vocal frequency candidates before pitch estimation.
 
 \section{Sequence Modeling and Grammar-Aware Recognition}
 Peri \cite{peri2023applying} introduced a paradigm of treating raga recognition as a document classification problem using hierarchical attention networks trained on CMD and HMD datasets. By processing note sequences analogously to sentences in NLP, the system learns grammar patterns in arohana--avarohana transitions. This work directly motivates grammar-aware sequence validation and is extended in this project from passive classification to active real-time rule enforcement.
+
+The broader sequence-modeling literature also supports the design choices in this thesis. Long short-term memory networks \cite{hochreiter1997lstm} provide a principled way to retain melodic context, and attention mechanisms \cite{vaswani2017attention} improve the selection of salient note transitions in long sequences. Although this thesis does not train a neural sequence model, its rolling phrase buffer and longest-suffix matching emulate the contextual memory that these models learn from data.
+
+Optimization and regularization techniques from general deep learning literature remain relevant for comparing deterministic and learned systems. Adam \cite{kingma2015adam} is widely used to stabilize training, while residual learning \cite{he2016resnet} reduces degradation in deep models. These methods are not required in the rule-based validator, but they form the benchmark against which the thesis positions a simpler and more explainable approach.
 
 Natesan and Beigi \cite{natesan2020carnatic} combined TDNNs, LSTMs, and attention mechanisms tested on 676 songs spanning 172 ragas, achieving 95.31\% classification accuracy. The temporal modeling explicitly traces arohana and avarohana patterns, and the attention mechanism highlights critical melodic phrases. The present project adapts these insights into a finite state machine with direction-aware phrase tracking that operates without training data.
 
@@ -359,6 +421,8 @@ The stacked ensemble learning study \cite{arxiv2022carnatic} demonstrated that a
 
 \section{Explainable AI for Raga Identification}
 The ISMIR 2023 study \cite{ismir2023explainable} applied XAI techniques to deep learning raga models to verify alignment with human expert understanding---specifically checking whether the model weighted gamakas (pitch oscillations) and anchor notes appropriately. For a pedagogical tool, conceptual explainability is critical: students must be able to trust and act on the feedback. This work directly motivates the transparent FSM design in this project, where every error is attributed to a specific rule and accompanied by an explanation of the raga's scale.
+
+General interpretability methods also reinforce this design choice. Ribeiro et al. \cite{ribeiro2016why} show how local explanations can make classifier behavior actionable, Lundberg and Lee \cite{lundberg2017unified} provide a unified Shapley-value framework for feature attribution, and Grad-CAM \cite{selvaraju2017gradcam} demonstrates how visual explanations improve model debugging. These methods underline the pedagogical advantage of this thesis: instead of approximating an explanation after classification, the system encodes the explanation directly into the validation rule that fires.
 
 \section{Phrase Analysis and Pitch Distribution Methods}
 The IJCA 2015 study \cite{ijca2015phrase} explored raga recognition through statistical pitch distributions and phrase analysis, building probabilistic maps of arohana and avarohana note frequencies. This classical approach is an early precursor to the FSM phrase buffer used in this project, extended from passive recognition to active forbidden-skip detection and characteristic prayoga recognition.
@@ -382,13 +446,14 @@ Current raga systems share several key gaps relative to the requirements of a re
 \centering
 \caption{Summary of key literature and relevance to this work}
 \label{tab:lit-summary}
-\begin{tabular}{|l|p{3.5cm}|p{5.5cm}|}
+\small
+\begin{tabular}{|l|p{3cm}|p{5cm}|}
 \hline
 \textbf{Reference} & \textbf{Focus} & \textbf{Relevance to this work} \\
 \hline
 \cite{hebbar2023comparison} & CNN on Mel-spectrograms (98.1\% on CMD-40) & Confirms spectral features are discriminative; motivates our spectral tonic scorer \\
 \cite{krishnaswamy2018application} & Carnatic F0 via STFT & Establishes tonic-relative pitch extraction as a prerequisite \\
-\cite{peri2023applying} & NLP--style hierarchical attention on raga sequences & Motivates grammar-aware sequence validation \\
+\cite{peri2023applying} & NLP-style hierarchical attention on raga sequences & Motivates grammar-aware sequence validation \\
 \cite{natesan2020carnatic} & TDNN+LSTM+attention (95.31\% on 172 ragas) & Supports temporal phrase modeling in FSM \\
 \cite{arxiv2022carnatic} & Stacked ensemble feature fusion & Motivates Carnatic HPS cross-validation ensemble \\
 \cite{ic2021comparative} & Classifier benchmarks for raga & Confirms feasibility of sub-50ms processing \\
@@ -784,12 +849,12 @@ The end-to-end latency of approximately 70\,ms and deterministic, rule-based des
 This project aligns with SDG 4 (Quality Education) by providing accessible, automated, and consistent feedback for Carnatic music students, reducing dependence on scarce expert teacher time. It supports SDG 9 (Industry, Innovation and Infrastructure) by advancing real-time, low-latency audio analytics and demonstrating a reproducible software pipeline for music information retrieval. It contributes to SDG 11 (Sustainable Cities and Communities) by using technology to preserve, document, and promote an intangible cultural heritage, making Carnatic music education more accessible across geographic and economic barriers.
 
 \appendix
-\chapter*{Appendices}
-\addcontentsline{toc}{chapter}{Appendices}
 
-\chapter{Appendix A: Sample Code Snippets}
+\chapter{Sample Code Snippets}
 \label{appendix:code}
-\begin{lstlisting}[language=Python, caption=Tonic detection and swara mapping]
+
+\noindent\textbf{Tonic detection and swara mapping}
+\begin{lstlisting}[language=Python, caption={Tonic Sa detection using the Carnatic HPS ensemble}, label={lst:tonic-detect}]
 from tonic_sa_detection import TonicSaDetector
 from raga_grammar.swara_quantizer import SwaraQuantizer
 
@@ -805,7 +870,8 @@ swara_result = quantizer.to_swara_tonic_band(390.0)
 print(swara_result)
 \end{lstlisting}
 
-\begin{lstlisting}[language=Python, caption=Real-time grammar validation]
+\noindent\textbf{Real-time grammar validation}
+\begin{lstlisting}[language=Python, caption={Real-time swara validation using the FSM grammar validator}, label={lst:grammar-validate}]
 from raga_grammar.grammar_validator import RagaGrammarValidator
 from raga_grammar.swara_quantizer import SwaraResult
 
@@ -819,9 +885,11 @@ event2 = validator.validate_swara(sr2, timestamp_ms=600.0)
 print(event2.error_type)  # ErrorType.FORBIDDEN_NOTE
 \end{lstlisting}
 
-\chapter{Appendix B: Example Raga Grammar Rules}
+\chapter{Example Raga Grammar Rules}
 \label{appendix:grammar}
-\begin{lstlisting}[language=Python, caption=Raga database entry (simplified)]
+
+\noindent\textbf{Raga database entry (simplified)}
+\begin{lstlisting}[language=Python, caption={Structured raga record for Bhairavi with arohana, avarohana, and characteristic phrases}, label={lst:raga-db}]
 RagaInfo(
     name="Bhairavi",
     arohana=["Sa", "Ri1", "Ga2", "Ma1", "Pa", "Dha1", "Ni2", "Sa"],
@@ -837,7 +905,8 @@ RagaInfo(
 )
 \end{lstlisting}
 
-\begin{lstlisting}[language=Python, caption=Vakra raga with automatic skip derivation]
+\noindent\textbf{Vakra raga with automatic skip derivation}
+\begin{lstlisting}[language=Python, caption={Automatic derivation of forbidden vakra skip pairs from a zigzag raga scale}, label={lst:vakra-skip}]
 # For a vakra raga like Sankarabharanam variant:
 # Arohana: Sa -> Ri -> Ga -> Ri -> Ma -> Pa -> ...
 # Zigzag at Ri: (Ga->Ri=-204 cents, Ri->Ma=+316 cents)
@@ -847,7 +916,7 @@ skips = _derive_vakra_skip_phrases(["Sa","Ri","Ga","Ri","Ma","Pa","Sa"])
 print(skips)  # [['Ga', 'Ma']]
 \end{lstlisting}
 
-\chapter{Appendix C: Test Checklist}
+\chapter{Test Checklist}
 \label{appendix:tests}
 \begin{itemize}
     \item Tonic detection returns stable Sa for three benchmark recordings within 2.4\% error.
