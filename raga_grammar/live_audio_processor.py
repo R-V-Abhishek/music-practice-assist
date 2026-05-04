@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
+import math
+from collections import deque
 
 import librosa
 import numpy as np
@@ -39,6 +41,7 @@ class LiveProcessorConfig:
     pyin_hop_length: int = 256
     min_frame_rms: float = 0.008
     min_swara_confidence: float = 0.10
+    forbidden_slope_gate_st_per_sec: float = 12.0
 
 
 class LiveAudioProcessor:
@@ -78,6 +81,7 @@ class LiveAudioProcessor:
         # Clear alert (and reset timers) after 600ms of NO forbidden notes
         self._forbidden_clear_ms: float = 600.0
         self._active_alert_type: Optional[str] = None
+        self._recent_voiced_hz: deque = deque(maxlen=6)  # ~140ms of frames at 23ms each
 
     def _reconfigure_for_input_sr(self, input_sr: int) -> None:
         """Bind pipeline to mic sample rate and preserve time-window durations."""
@@ -171,6 +175,7 @@ class LiveAudioProcessor:
 
         if frame.validation_event is not None:
             event["direction"] = frame.validation_event.direction.value
+            event["step_direction"] = frame.validation_event.step_direction.value
             event["error_type"] = (
                 frame.validation_event.error_type.value
                 if frame.validation_event.error_type is not None
@@ -183,7 +188,9 @@ class LiveAudioProcessor:
             )
             event["description"] = frame.validation_event.description
             if frame.validation_event.matched_phrase is not None:
-                event["matched_phrase"] = frame.validation_event.matched_phrase
+                phrase = frame.validation_event.matched_phrase
+                event["matched_phrase"] = phrase
+                event["prayoga_message"] = " → ".join(phrase)
 
         return event
 
@@ -228,31 +235,46 @@ class LiveAudioProcessor:
 
         trigger_by_time = (ts - self._forbidden_start_ms) >= self._forbidden_trigger_ms
 
+        # Slope gate: don't fire during fast melodic glides
+        if len(self._recent_voiced_hz) >= 2:
+            hz_arr = list(self._recent_voiced_hz)
+            st_change = abs(12.0 * math.log2((hz_arr[-1] + 1e-9) / (hz_arr[0] + 1e-9)))
+            dt_sec = (len(hz_arr) - 1) * 0.023  # ~23ms per frame
+            slope_st_per_sec = st_change / max(dt_sec, 0.001)
+            is_glide = slope_st_per_sec > self.config.forbidden_slope_gate_st_per_sec
+        else:
+            is_glide = False
+
         if (
             not self._forbidden_alert_active
             and trigger_by_time
+            and not is_glide
         ):
             self._forbidden_alert_active = True
             self._consecutive_forbidden = 0
             self._active_alert_type = validation.error_type.value
             feedback = self.feedback.generate_feedback(validation, self.raga_name)
-            alerts.append(
-                {
-                    "type": "alert_event",
-                    "alert": validation.error_type.value,
-                    "secondary_alert": validation.secondary_error.value if validation.secondary_error else None,
-                    "state": "active",
-                    "timestamp_ms": round(ts, 2),
-                    "swara": validation.swara,
-                    "direction": validation.direction.value,
-                    "message": feedback.get("message", validation.description),
-                    "suggestion": feedback.get("suggestion", ""),
-                    "title": feedback.get("title", ""),
-                    "explanation": feedback.get("explanation", ""),
-                    "correction": feedback.get("correction", ""),
-                    "confidence": round(validation.confidence, 3),
-                }
-            )
+            alert_payload: Dict[str, Any] = {
+                "type": "alert_event",
+                "alert": validation.error_type.value,
+                "secondary_alert": validation.secondary_error.value if validation.secondary_error else None,
+                "state": "active",
+                "timestamp_ms": round(ts, 2),
+                "swara": validation.swara,
+                "direction": validation.direction.value,
+                "message": feedback.get("message", validation.description),
+                "suggestion": feedback.get("suggestion", ""),
+                "title": feedback.get("title", ""),
+                "explanation": feedback.get("explanation", ""),
+                "correction": feedback.get("correction", ""),
+                "confidence": round(validation.confidence, 3),
+            }
+            # Pitch correction fields (only for forbidden_note)
+            if feedback.get("pitch_correction"):
+                alert_payload["pitch_correction"] = feedback["pitch_correction"]
+                alert_payload["correct_swara"] = feedback.get("correct_swara", "")
+                alert_payload["cents_diff"] = feedback.get("cents_diff", 0)
+            alerts.append(alert_payload)
 
         return alerts
 
@@ -309,6 +331,8 @@ class LiveAudioProcessor:
                     or result.swara_result.confidence >= self.config.min_swara_confidence
                 )
             ):
+                if result.voiced:
+                    self._recent_voiced_hz.append(result.frequency_hz)
                 events.append(self._frame_to_event(result))
                 events.extend(self._build_alert_events(result))
 

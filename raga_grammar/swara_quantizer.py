@@ -91,6 +91,8 @@ class SwaraQuantizer:
         21: 'Ni3 (Shruti 21)',
     }
 
+    SHRUTI_NAME_TO_CENTS = {name: cents for name, cents in zip(SHRUTI_TO_SWARA.values(), SHRUTI_CENTS_22)}
+
     # Supported live range relative to tonic:
     # ati anumaandra Sa (Sa/4) to ati taara Sa (4*Sa)
     MIN_OCTAVE_OFFSET = -2
@@ -460,11 +462,15 @@ class SwaraQuantizer:
         Returns:
             Frequency in Hz
         """
-        base = swara.split(' (')[0]  # strip '(Shruti N)' suffix if present
-        if base not in self.CARNATIC_RATIOS:
-            raise ValueError(f"Unknown swara: {swara}")
+        if swara in self.SHRUTI_NAME_TO_CENTS:
+            cents = self.SHRUTI_NAME_TO_CENTS[swara]
+            base_ratio = 2.0 ** (cents / 1200.0)
+        else:
+            base = swara.split(' (')[0]  # strip '(Shruti N)' suffix if present
+            if base not in self.CARNATIC_RATIOS:
+                raise ValueError(f"Unknown swara: {swara}")
+            base_ratio = self.CARNATIC_RATIOS[base]
         
-        base_ratio = self.CARNATIC_RATIOS[base]
         octave_multiplier = 2 ** octave
         return self.sa_frequency * base_ratio * octave_multiplier
     

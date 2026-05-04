@@ -5,11 +5,44 @@ Converts grammar validation errors into educational feedback for students.
 Supports multiple languages and provides constructive correction suggestions.
 """
 
-from typing import Dict, List, Optional
+import random
+from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
 from .grammar_validator import ValidationEvent, ErrorType, Direction
-from .raga_database import get_raga_info
+from .raga_database import get_raga_info, SWARA_CENTS
+
+
+_PRAYOGA_CONGRATS = [
+    "Excellent! ",
+    "Well done! ",
+    "Beautiful! ",
+    "Perfect phrasing! ",
+    "Superb! ",
+]
+
+
+def _nearest_allowed(sung: str, candidates: List[str]) -> Optional[Tuple[str, int]]:
+    """Return (best_allowed_swara, cents_diff) closest to `sung`.
+    cents_diff > 0 means sung is flat (needs to go higher).
+    cents_diff < 0 means sung is sharp (needs to go lower).
+    """
+    sung_c = SWARA_CENTS.get(sung)
+    if sung_c is None or not candidates:
+        return None
+    best: Optional[str] = None
+    best_diff = 0
+    best_dist = float('inf')
+    for s in candidates:
+        sc = SWARA_CENTS.get(s)
+        if sc is None:
+            continue
+        dist = abs(sc - sung_c)
+        if dist < best_dist:
+            best_dist = dist
+            best = s
+            best_diff = sc - sung_c
+    return (best, best_diff) if best is not None else None
 
 class Language(Enum):
     """Supported feedback languages"""
@@ -163,41 +196,77 @@ class FeedbackGenerator:
                 in_arohana = event.swara in set(raga_info.arohana)
                 in_avarohana = event.swara in set(raga_info.avarohana)
 
+                # Compute nearest correct swara + pitch correction
+                if event.direction == Direction.ASCENDING:
+                    allowed_pool = [s for s in raga_info.arohana if s not in raga_info.varja_arohana]
+                elif event.direction == Direction.DESCENDING:
+                    allowed_pool = [s for s in raga_info.avarohana if s not in raga_info.varja_avarohana]
+                else:
+                    allowed_pool = list(
+                        (set(raga_info.arohana) | set(raga_info.avarohana))
+                        - raga_info.varja_arohana - raga_info.varja_avarohana
+                    )
+
+                nearest = _nearest_allowed(event.swara, allowed_pool)
+                if nearest:
+                    correct_swara, cent_diff = nearest
+                    format_params['correct_swara'] = correct_swara
+                    format_params['cents_diff'] = abs(cent_diff)
+                    if cent_diff > 0:
+                        pitch_hint = (
+                            f"You are singing {event.swara} which is {abs(cent_diff)} cents too low. "
+                            f"Raise your pitch by {abs(cent_diff)} cents to reach {correct_swara}."
+                        )
+                    elif cent_diff < 0:
+                        pitch_hint = (
+                            f"You are singing {event.swara} which is {abs(cent_diff)} cents too high. "
+                            f"Lower your pitch by {abs(cent_diff)} cents to reach {correct_swara}."
+                        )
+                    else:
+                        pitch_hint = f"Use {correct_swara} here instead of {event.swara}."
+                    format_params['pitch_hint'] = pitch_hint
+                else:
+                    format_params['correct_swara'] = ''
+                    format_params['cents_diff'] = 0
+                    format_params['pitch_hint'] = ''
+
                 if not in_arohana and not in_avarohana:
-                    # Note is completely absent from this raga
                     format_params['direction_context'] = ''
+                    ph = format_params.get('pitch_hint', '')
                     format_params['allowed_suggestion'] = (
-                        f"Raga {raga_name} does not use {event.swara} at all. "
-                        f"Use only the swaras in its scale"
+                        f"{ph} Raga {raga_name} does not use {event.swara} at all."
+                        if ph else
+                        f"Raga {raga_name} does not use {event.swara} at all. Use only the swaras in its scale"
                     )
                     format_params['detailed_explanation'] = (
                         f"Arohana: {' \u2192 '.join(raga_info.arohana)}  |  "
                         f"Avarohana: {' \u2192 '.join(raga_info.avarohana)}"
                     )
                 elif in_arohana and not in_avarohana:
-                    # Note only allowed while ascending
                     format_params['direction_context'] = ' while descending'
+                    ph = format_params.get('pitch_hint', '')
                     format_params['allowed_suggestion'] = (
-                        f"{event.swara} appears only in the Arohana (ascending scale) of {raga_name}. "
-                        f"Avoid it while descending"
+                        f"{event.swara} is only in the Arohana of {raga_name}. Avoid it while descending. {ph}"
+                        if ph else
+                        f"{event.swara} appears only in the Arohana (ascending scale) of {raga_name}. Avoid it while descending"
                     )
                     format_params['detailed_explanation'] = (
                         f"Avarohana: {' \u2192 '.join(raga_info.avarohana)}"
                     )
                 elif in_avarohana and not in_arohana:
-                    # Note only allowed while descending
                     format_params['direction_context'] = ' while ascending'
+                    ph = format_params.get('pitch_hint', '')
                     format_params['allowed_suggestion'] = (
-                        f"{event.swara} appears only in the Avarohana (descending scale) of {raga_name}. "
-                        f"Avoid it while ascending"
+                        f"{event.swara} is only in the Avarohana of {raga_name}. Avoid it while ascending. {ph}"
+                        if ph else
+                        f"{event.swara} appears only in the Avarohana (descending scale) of {raga_name}. Avoid it while ascending"
                     )
                     format_params['detailed_explanation'] = (
                         f"Arohana: {' \u2192 '.join(raga_info.arohana)}"
                     )
                 else:
-                    # Shouldn't normally reach here (note in both sets)
                     format_params['direction_context'] = ''
-                    format_params['allowed_suggestion'] = 'Check your intonation'
+                    format_params['allowed_suggestion'] = format_params.get('pitch_hint') or 'Check your intonation'
                     format_params['detailed_explanation'] = (
                         f"Arohana: {' \u2192 '.join(raga_info.arohana)}  |  "
                         f"Avarohana: {' \u2192 '.join(raga_info.avarohana)}"
@@ -232,7 +301,13 @@ class FeedbackGenerator:
         
         # Add corrective suggestions
         feedback['correction'] = self._generate_correction_suggestion(event, raga_info)
-        
+
+        # Attach pitch correction hint directly if computed
+        if event.error_type == ErrorType.FORBIDDEN_NOTE and format_params.get('pitch_hint'):
+            feedback['pitch_correction'] = format_params['pitch_hint']
+            feedback['correct_swara'] = format_params.get('correct_swara', '')
+            feedback['cents_diff'] = format_params.get('cents_diff', 0)
+
         # Add pitch accuracy feedback if relevant
         if abs(event.cents_deviation) > 10:
             pitch_feedback = self._generate_pitch_feedback(event)
@@ -253,10 +328,11 @@ class FeedbackGenerator:
         """
         phrase_str = ' \u2192 '.join(phrase)
         if is_positive:
+            congrats = random.choice(_PRAYOGA_CONGRATS)
             return {
-                'title': "Prayoga Recognized!",
-                'message': f"You completed the characteristic phrase {phrase_str} in {raga_name}!",
-                'suggestion': f"Keep going \u2014 this is a signature prayoga of {raga_name}",
+                'title': f"{congrats}Prayoga Recognized!",
+                'message': f"You sang the characteristic phrase {phrase_str} — a signature prayoga of {raga_name}!",
+                'suggestion': f"This is a hallmark phrase of {raga_name}. Keep building on it!",
             }
         # Negative: forbidden skip — delegate to template
         templates = self.templates.get(self.language, self.templates[Language.ENGLISH])
@@ -274,11 +350,12 @@ class FeedbackGenerator:
         """Generate encouraging feedback for correct notes"""
         if event.matched_phrase is not None:
             phrase_str = ' \u2192 '.join(event.matched_phrase)
+            congrats = random.choice(_PRAYOGA_CONGRATS)
             return {
-                'title': "Prayoga Recognized!",
-                'message': f"You completed the characteristic phrase {phrase_str} in {raga_name}!",
-                'suggestion': f"Keep going \u2014 this is a signature prayoga of {raga_name}",
-                'explanation': f"This is a well-known melodic phrase (prayoga) of {raga_name}"
+                'title': f"{congrats}Prayoga Recognized!",
+                'message': f"You sang the characteristic phrase: {phrase_str}",
+                'suggestion': f"This is a signature prayoga of {raga_name} \u2014 keep building on it!",
+                'explanation': f"{phrase_str} is a well-known melodic phrase (prayoga) of {raga_name}."
             }
         return {
             'title': "Correct Note",

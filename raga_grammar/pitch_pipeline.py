@@ -118,14 +118,14 @@ class RealTimeGrammarPipeline:
         self.sr = sr
 
         # Responsiveness-first tuning: react quickly to swara changes
-        self._hysteresis_fast_switch_conf = 0.60      # was 0.50
+        self._hysteresis_fast_switch_conf = 0.52      # lower → switches faster on confident frames
         self._hysteresis_candidate_min_count = 1      
-        self._hysteresis_candidate_switch_conf = 0.35 
-        self._min_duration_hold_ms = 18.0             
-        self._min_duration_low_motion_st_per_sec = 6.0  
-        self._min_duration_not_strong_conf = 0.60     
-        self._majority_hold_conf_max = 0.25           
-        self._hysteresis_log2_margin = 25.0 / 1200.0  # was 15.0 / 1200.0
+        self._hysteresis_candidate_switch_conf = 0.30  # lower → candidate accepted sooner
+        self._min_duration_hold_ms = 12.0              # was 18ms — shorter hold = more responsive
+        self._min_duration_low_motion_st_per_sec = 5.0  
+        self._min_duration_not_strong_conf = 0.55      # was 0.60
+        self._majority_hold_conf_max = 0.22            # was 0.25
+        self._hysteresis_log2_margin = 20.0 / 1200.0   # was 25.0 — tighter zone = faster switch
         
         # Verify raga exists
         if not get_raga_info(raga_name):
@@ -153,14 +153,14 @@ class RealTimeGrammarPipeline:
         self._unvoiced_ms_accum: float = 0.0
         self._drift_counter: int = 0
         self._octave_error_count: int = 0
-        self._octave_error_accept_after: int = 4
+        self._octave_error_accept_after: int = 2
 
         # MPM (McLeod Pitch Method) tuning
-        self._mpm_rms_threshold: float = 0.008
-        self._mpm_key_threshold: float = 0.93
+        self._mpm_rms_threshold: float = 0.006        # was 0.008 — detect softer frames
+        self._mpm_key_threshold: float = 0.91          # was 0.93 — slightly more permissive
         self._mpm_min_hz: float = 50.0
         self._mpm_max_hz: float = 800.0  # Indian classical: female taara ~1108Hz, 800Hz is safe ceiling
-        self._mpm_pitch_history: deque[float] = deque(maxlen=3)
+        self._mpm_pitch_history: deque[float] = deque(maxlen=2)  # was 3 — less smoothing lag
 
         # Adaptive 2-state Kalman smoothing [pitch_hz, velocity_hz_per_frame]
         self._kalman_state: Optional[np.ndarray] = None
@@ -397,10 +397,10 @@ class RealTimeGrammarPipeline:
         jump_cents = 1200.0 * math.log2((frequency_hz + 1e-9) / (self._last_frequency_hz + 1e-9))
         abs_jump = abs(jump_cents)
 
-        # Near-octave flips (roughly 2x / 0.5x) are corrected directly.
-        if 900.0 <= abs_jump <= 1500.0:
-            corrected = frequency_hz / 2.0 if jump_cents > 0 else frequency_hz * 2.0
-            return corrected
+        # Only correct upward near-octave spikes (2x harmonic confusion).
+        # Downward near-octave jumps are legitimate lower-octave singing — let through.
+        if 900.0 <= abs_jump <= 1500.0 and jump_cents > 0:
+            return frequency_hz / 2.0
 
         # Extreme outlier jumps are rejected.
         if abs_jump > 1800.0:
@@ -466,7 +466,9 @@ class RealTimeGrammarPipeline:
             return raw_frequency_hz
 
         jump_log2 = abs(math.log2((raw_frequency_hz + 1e-9) / (ref_pitch + 1e-9)))
-        if jump_log2 > 0.6:
+        # Threshold > 1.1 octaves: allows legitimate 1-octave lower-register singing
+        # while still blocking true harmonic spikes (>1.1 octave = > ~1320 cents jump).
+        if jump_log2 > 1.1:
             self._octave_error_count += 1
             if self._octave_error_count > self._octave_error_accept_after:
                 # Accept sustained jump and reset filter around new pitch.
@@ -690,7 +692,7 @@ class RealTimeGrammarPipeline:
 
         return swara_result, estimated_f, voicing_prob
 
-    def _estimate_swara_from_acpt(self, audio_frame: np.ndarray) -> Optional[Tuple[SwaraResult, float, float]]:
+    def _estimate_swara_from_acpt(self, audio_frame: np.ndarray, timestamp_ms: float = 0.0) -> Optional[Tuple[SwaraResult, float, float]]:
         """
         Low-latency ACPT (autocorrelation-based) swara estimation.
 
@@ -743,10 +745,25 @@ class RealTimeGrammarPipeline:
             denom = np.sqrt(max(e1 * e2, 1e-12))
             nacf[i] = acf[lag] / denom
 
-        # Reject unvoiced / weakly periodic frames
+        # Reject unvoiced / weakly periodic frames.
+        # Lower threshold (0.16 vs 0.22) to survive breath transitions and
+        # soft syllable onsets during a sustained hum.
         peak_i = int(np.argmax(nacf))
         peak_score = float(nacf[peak_i])
-        if peak_score < 0.22:
+
+        # Continuity bias: if last stable pitch is recent, allow weaker frames
+        # that agree with it through, so constant-tone hum survives volume dips.
+        continuity_boost = 0.0
+        if self._last_frequency_hz is not None and self._last_timestamp_ms is not None:
+            gap_ms = float(timestamp_ms - self._last_timestamp_ms)
+            if gap_ms <= 80.0:
+                estimated_f_candidate = float(self.sr / float(lags[peak_i])) if lags[peak_i] > 0 else 0.0
+                if estimated_f_candidate > 0 and self._last_frequency_hz > 0:
+                    deviation_cents = abs(1200.0 * math.log2((estimated_f_candidate + 1e-9) / (self._last_frequency_hz + 1e-9)))
+                    if deviation_cents < 80.0:  # same note territory
+                        continuity_boost = 0.08  # small lift — not enough alone to pass noise
+
+        if peak_score + continuity_boost < 0.16:
             return None
 
         # Parabolic refinement around the best lag
@@ -770,7 +787,7 @@ class RealTimeGrammarPipeline:
         # ACPT confidence combines peak strength and peak dominance
         baseline = float(np.median(nacf))
         dominance = max(0.0, peak_score - baseline)
-        voicing_prob = float(np.clip((peak_score - 0.15) / 0.75, 0.0, 1.0))
+        voicing_prob = float(np.clip((peak_score - 0.10) / 0.75, 0.0, 1.0))  # was 0.15 offset
         acpt_conf = float(np.clip(0.6 * voicing_prob + 0.4 * np.clip(dominance / 0.5, 0.0, 1.0), 0.0, 1.0))
         swara_result.confidence = float(np.clip(0.65 * swara_result.confidence + 0.35 * acpt_conf, 0.0, 1.0))
 
@@ -1023,7 +1040,7 @@ class RealTimeGrammarPipeline:
                 return None
 
             mpm_estimate = self._estimate_swara_from_mpm(audio_frame)
-            acpt_estimate = self._estimate_swara_from_acpt(audio_frame)
+            acpt_estimate = self._estimate_swara_from_acpt(audio_frame, timestamp_ms)
 
             raw_hz = None
             if mpm_estimate is not None and acpt_estimate is not None:
@@ -1048,7 +1065,13 @@ class RealTimeGrammarPipeline:
                 if fst_result is not None:
                     swara_result, best_shruti_idx = fst_result
                     self._last_shruti_idx = best_shruti_idx
-                    stabilized_frequency = raw_hz
+                    # Back-compute frequency at the correctly-folded octave so
+                    # the displayed Hz matches the swara label, not a raw harmonic.
+                    norm_freq, _fst_oct = self.swara_quantizer._normalize_to_tonic_band(raw_hz)
+                    if norm_freq is not None:
+                        stabilized_frequency = norm_freq * (2.0 ** swara_result.octave)
+                    else:
+                        stabilized_frequency = raw_hz
                     voicing_prob = swara_result.confidence
                     
                     # Update HMM forward pass with actual observation

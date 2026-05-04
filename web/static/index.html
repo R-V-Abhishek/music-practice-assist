@@ -185,6 +185,10 @@
       padding: 0.15rem 0;
       border-bottom: 1px solid rgba(51, 65, 85, 0.3);
     }
+    .event-log li.log-prayoga { color: var(--good); }
+    .event-log li.log-error { color: var(--bad); }
+    .event-log li.log-warn { color: var(--orange); }
+    .event-log li.log-cleared { color: #6ee7b7; }
 
     /* Group 6: Session summary overlay */
     .summary-overlay {
@@ -448,9 +452,13 @@
       }
     }
 
-    function pushEvent(message) {
+    const _PRAYOGA_CONGRATS = [
+      '🎉 Excellent!', '✨ Beautiful!', '🌟 Superb!', '👏 Well done!', '🎵 Perfect phrasing!'
+    ];
+
+    function pushEvent(message, cls = '') {
       const stamp = new Date().toLocaleTimeString();
-      appState.events.unshift(`[${stamp}] ${message}`);
+      appState.events.unshift({ text: `[${stamp}] ${message}`, cls });
       if (appState.events.length > 40) appState.events.length = 40;
       renderEventLog();
     }
@@ -483,9 +491,14 @@
     function renderEventLog() {
       if (eventLogEl.style.display === 'none') return;
       eventLogEl.innerHTML = '';
-      for (const msg of appState.events) {
+      for (const entry of appState.events) {
         const li = document.createElement('li');
-        li.textContent = msg;
+        if (typeof entry === 'string') {
+          li.textContent = entry;
+        } else {
+          li.textContent = entry.text;
+          if (entry.cls) li.className = entry.cls;
+        }
         eventLogEl.appendChild(li);
       }
     }
@@ -543,6 +556,14 @@
         d.appendChild(p);
         alertPanel.appendChild(d);
       }
+      if (data.pitch_correction) {
+        const pc = document.createElement('div');
+        pc.className = 'alert-correction';
+        pc.style.color = 'var(--warn)';
+        pc.style.marginTop = '0.25rem';
+        pc.textContent = '🎵 ' + data.pitch_correction;
+        alertPanel.appendChild(pc);
+      }
       if (data.correction) {
         const c = document.createElement('div');
         c.className = 'alert-correction';
@@ -559,12 +580,13 @@
     /* Group 3: Prayoga toast */
     function showPrayogaToast(phrase) {
       const phraseStr = phrase.join(' \u2192 ');
+      const congrats = _PRAYOGA_CONGRATS[Math.floor(Math.random() * _PRAYOGA_CONGRATS.length)];
       const toast = document.createElement('div');
       toast.className = 'toast';
-      toast.textContent = `\u2713 Prayoga: ${phraseStr}`;
+      toast.textContent = `${congrats} Prayoga: ${phraseStr}`;
       toastContainer.appendChild(toast);
-      setTimeout(() => { toast.classList.add('fading'); }, 1600);
-      setTimeout(() => { toast.remove(); }, 2000);
+      setTimeout(() => { toast.classList.add('fading'); }, 2000);
+      setTimeout(() => { toast.remove(); }, 2400);
     }
 
     /* ── Graph ── */
@@ -765,7 +787,8 @@
           /* Group 3: Prayoga toast */
           if (event.matched_phrase && Array.isArray(event.matched_phrase)) {
             showPrayogaToast(event.matched_phrase);
-            pushEvent(`Prayoga: ${event.matched_phrase.join(' \u2192 ')}`);
+            const congrats = _PRAYOGA_CONGRATS[Math.floor(Math.random() * _PRAYOGA_CONGRATS.length)];
+            pushEvent(`${congrats} Prayoga: ${event.prayoga_message || event.matched_phrase.join(' → ')}`, 'log-prayoga');
           }
 
           /* Group 8: Gamaka KPI */
@@ -808,22 +831,27 @@
             message: event.message,
             suggestion: event.suggestion || null,
             explanation: event.explanation || null,
+            pitch_correction: event.pitch_correction || null,
             correction: event.correction || null,
           });
-          pushEvent(`Alert: ${event.message}`);
+          const logMsg = event.pitch_correction
+            ? `Alert: ${event.message} — ${event.pitch_correction}`
+            : `Alert: ${event.message}`;
+          const logCls = event.alert === 'forbidden_phrase' ? 'log-warn' : 'log-error';
+          pushEvent(logMsg, logCls);
         }
 
         if (event.type === 'alert_event' && event.state === 'cleared') {
           renderAlert({
             severity: 'cleared',
             icon: '\u2713',
-            title: null,
-            message: 'Alert cleared',
+            title: 'Back on track!',
+            message: 'Good recovery \u2014 keep singing.',
             suggestion: null,
             explanation: null,
             correction: null,
           });
-          pushEvent('Alert cleared');
+          pushEvent('\u2713 Back on track \u2014 alert cleared', 'log-cleared');
         }
 
         if (event.type === 'session_status' && event.stage === 'locked') {

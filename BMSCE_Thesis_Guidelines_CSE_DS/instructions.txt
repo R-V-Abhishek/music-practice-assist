@@ -1,0 +1,130 @@
+Guidelines for Undergraduate B.Tech. CSE (Data
+Science) Final Year Thesis Formatting
+
+Department of Computer Science and Engineering(Data Science)
+
+December 2025
+
+1 Introduction
+These guidelines provide a standardized format for the final year thesis of B.Tech. CSE
+
+(Data Science) students. The thesis must demonstrate original work in data science appli-
+cations, such as machine learning, big data analytics, or AI-driven systems. Adherence to
+
+these rules ensures clarity, professionalism, and academic integrity. The document should
+be approximately 60–80 pages, excluding appendices, declaration, Certificate, Table of
+Contents pages.
+
+2 Overall Formatting Requirements
+• Paper Size and Margins: A4 paper with 1-inch margins on all sides (top, bottom,
+left, right).
+• Font: Times New Roman, 12pt for body text; 14pt bold for chapter titles; 12pt
+bold for section headings.
+
+• Line Spacing: Strictly 1.5 line spacing throughout the document, including ab-
+stract and references. Use single spacing for captions, footnotes, and long quota-
+tions.
+
+1
+
+• Alignment: Justified text with 0.5-inch indentation for new paragraphs (no extra
+space between paragraphs).
+• Page Numbering: Roman numerals (i, ii, ...) for front matter (title page to
+abstract); Arabic numerals (1, 2, ...) starting from Chapter 1.
+• File Format: Submit as PDF compiled from LaTeX.
+
+3 Thesis Structure
+The thesis must follow this structure:
+1. Front Matter:
+• Title Page: Include title, student name, USN, supervisor name, department,
+institution, and year.
+• Declaration: Student declaration of originality.
+• Certificate: Supervisor’s certificate of approval.
+• Acknowledgements: Thank contributors (optional, 1 page max).
+
+• Abstract: 300–500 words summarizing problem, methods, results, and conclu-
+sions.
+
+• Keywords: 5–7 relevant terms.
+• Table of Contents: List all chapters, sections, and page numbers.
+• List of Figures, Tables, Abbreviations.
+2. Main Body:
+
+• Chapter 1: Introduction (Background, Objectives, Problem Statement, Sum-
+mary).
+
+• Chapter 2: Literature Review (Related Work, ML in Domain, Limitations).
+
+• Chapter 3: Methodology (System Architecture, Project Planning, Require-
+ments).
+
+2
+
+• Chapter 4: Implementation (Algorithm, Integration, Testing).
+
+• Chapter 5: Results and Discussion (Experimental Results, Evaluation, Vali-
+dation, Comparative Analysis, Optimization).
+
+• Chapter 6: Conclusion and Future Work (Conclusion, Key Learnings, Future
+Work, SDGs).
+3. Back Matter:
+• References: IEEE style, using BibLaTeX.
+• Appendices: Code samples, surveys, detailed matrices.
+
+4 Equations, Tables, Figures, and Algorithms
+• Equations: Use amsmath package. All equations must be centered and numbered
+chapter-wise (e.g., (1.1)). Refer in text as “Equation 1”.
+• Example:
+
+E = mc2
+
+(1)
+
+As shown in Equation 1.
+• Tables: Captions above the table, numbered chapter-wise (e.g., Table 1.1). Use
+tabular environment. Refer as “Table 1”.
+• Example:
+
+Table 1: Sample Table
+Item Value
+A 1
+B 2
+
+See Table 1.
+
+3
+
+• Figures: Captions below the figure, numbered chapter-wise (e.g., Figure 1.1). Use
+graphicx. Refer as “Figure 1”.
+• Example:
+
+Image
+
+Figure 1: Sample Figure
+
+As illustrated in Figure 1.
+
+• Algorithms: Use algorithm and algpseudocode packages. Numbered chapter-
+wise (e.g., Algorithm 4.1). Refer as “Algorithm 1”.
+
+• Example:
+Algorithm 1 Sample Algorithm
+Input: Data
+Output: Result
+
+Refer to Algorithm 1.
+
+5 References and Citations
+Use IEEE citation style. Cite in text as example. All sources must be listed in the
+References section. Minimum 30–50 references, prioritizing recent peer-reviewed articles
+from standard publishers like IEEE, Springer, Elsevier.
+
+4
+
+6 Additional Guidelines
+• Lists: Use itemize for bullets, enumerate for numbers. Nested lists allowed.
+• Code: In appendices, use listings package with language highlighting.
+• Plagiarism: Must be below 10%; include report.
+• AI Plagiarism: Must be below 10%; include report.
+• Length per Chapter: Introduction (4–6 pages), Literature (8–12), etc.
+• Submission: Hard copy (3) and soft copy on USB(LATEX source files and PDF).

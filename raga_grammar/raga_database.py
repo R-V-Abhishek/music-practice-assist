@@ -28,6 +28,7 @@ class RagaInfo:
     janya: bool                  # Is derived (janya) raga vs parent (melakarta)
     special_phrases: List[List[str]]        # Named or notable prayogas for the raga
     characteristic_phrases: List[List[str]]  # Signature melodic phrases
+    forbidden_phrases: List[List[str]]       # Sequences that are always wrong for this raga
 
 # 12 Carnatic swaras with their standard cent values (from Sa)
 SWARA_CENTS = {
@@ -167,6 +168,9 @@ _RAGA_DEFINITIONS = {
             # Gamaka-rich phrases
             ["Sa", "Ga2", "Ri2", "Ni2"],
             ["Pa", "Ma1", "Pa", "Sa", "Ni2"]        
+        ],
+        "forbidden_phrases": [
+            
         ]
     },
     
@@ -212,7 +216,14 @@ _RAGA_DEFINITIONS = {
         "avarohana": ["Sa", "Ni2", "Dha1", "Pa", "Ma1", "Ga2", "Ri2", "Sa"],
         "parent_mela": 22,
         "janya": True,
-        "special_phrases": [["Ni2", "Dha2", "Ma1"], ["Pa", "Ni2", "Dha2"]]
+        "special_phrases": [["Ni2", "Dha2", "Ma1"], ["Pa", "Ni2", "Dha2"]],
+        "forbidden_phrases": [
+            ["Pa", "Dha1", "Sa"],           # descent skips Ni2 (mandatory)
+            ["Pa", "Dha2", "Ni2", "Sa"],    # descent uses arohana Dha2 instead of Dha1
+            ["Sa", "Dha1", "Pa"],           # Dha1 is avarohana-only, wrong in ascent
+            ["Sa", "Dha2", "Pa"],           # skips mandatory Ri2/Ma1 in ascent
+            ["Sa", "Ri2", "Ga2", "Ma1"],    # Ga2 is avarohana-only, wrong in ascent
+        ]
     },
     
     "Suraṭi": {
@@ -379,7 +390,8 @@ def _build_raga_info(name: str, definition: Dict) -> RagaInfo:
         is_vakra_avarohana=is_vakra_avarohana,
         janya=definition["janya"],
         special_phrases=definition.get("special_phrases", []),
-        characteristic_phrases=definition.get("characteristic_phrases", [])
+        characteristic_phrases=definition.get("characteristic_phrases", []),
+        forbidden_phrases=definition.get("forbidden_phrases", [])
     )
 
 # Build complete raga database
@@ -451,7 +463,8 @@ def _generate_melakarta(mela_number: int) -> RagaInfo:
         is_vakra_avarohana=False,
         janya=False,
         special_phrases=[],
-        characteristic_phrases=[]
+        characteristic_phrases=[],
+        forbidden_phrases=[]
     )
 
 def list_available_ragas() -> List[str]:
